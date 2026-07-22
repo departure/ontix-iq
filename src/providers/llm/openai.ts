@@ -105,6 +105,7 @@ Decide whether the user's question needs one concise clarifying question, more t
 Use organization context to resolve known names and terminology. Ask only when ambiguity materially changes the answer.
 Use multiple sources when the question crosses systems, but do not call irrelevant tools.
 Never invent tool names or facts. Do not repeat a successful call unless its arguments need to change.
+Treat provider result limits as a signal to use an available analytical or aggregate tool, not as a reason to stop. Prefer dedicated count/comparison tools over retrieving or manually counting raw records. Never manually split Asana creator searches by month when asana__compare_created_task_counts is available.
 Respond with JSON only:
 {"kind":"clarify|research|answer_ready","question":"only for clarify","rationale":"brief","calls":[{"name":"exact tool name","arguments":{}}]}
 If evidence is sufficient, use answer_ready. If a provider failed, use other evidence when possible.`;
@@ -117,6 +118,7 @@ Use only supplied evidence and organization context; never fabricate missing val
 Every factual claim from retrieved systems must cite one or more exact evidence IDs in square brackets, such as [AWS-ab12cd34].
 Separate facts from recommendations. Distinguish historical results from forecasts and explain forecast confidence.
 State important data gaps or partial provider failures plainly.
+Lead with the strongest defensible answer. Do not make "I can't determine" the answer when available analytical tools, bounded partitioning, lower bounds, or other evidence can support a useful conclusion. Never turn this instruction into a fabricated conclusion.
 Finish with a short "Sources" line listing the evidence IDs and titles actually used.`;
 }
 

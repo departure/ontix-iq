@@ -66,6 +66,36 @@ export class AsanaOAuthProvider implements OAuthClientProvider {
     return this.tokenStore.write(tokens);
   }
 
+  async refreshTokens(): Promise<void> {
+    const current = await this.tokens();
+    if (!current?.refresh_token) throw new Error("Asana authorization has no refresh token");
+    const client = this.clientInformation();
+    const body = new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: current.refresh_token,
+      resource: this.config.asana.serverUrl.toString(),
+    });
+    const response = await fetch("https://mcp.asana.com/token", {
+      method: "POST",
+      headers: {
+        authorization: `Basic ${Buffer.from(
+          `${client.client_id}:${client.client_secret}`,
+        ).toString("base64")}`,
+        "content-type": "application/x-www-form-urlencoded",
+      },
+      body,
+    });
+    if (!response.ok) {
+      throw new Error(`Asana token refresh failed with HTTP ${response.status}`);
+    }
+    const refreshed = (await response.json()) as OAuthTokens;
+    if (!refreshed.access_token) throw new Error("Asana token refresh returned no access token");
+    await this.saveTokens({
+      ...refreshed,
+      refresh_token: refreshed.refresh_token ?? current.refresh_token,
+    });
+  }
+
   redirectToAuthorization(url: URL): void {
     process.stdout.write(`Authorize Asana in your browser:\n${url.toString()}\n`);
     const command =

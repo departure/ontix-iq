@@ -25,7 +25,7 @@ const environmentSchema = z.object({
   ONTIX_ORGANIZATION_ID: z.string().default("departure"),
   ONTIX_USER_ID: z.string().default("art-bradshaw"),
   ONTIX_MAX_TOOL_ROUNDS: z.coerce.number().int().min(1).max(12).default(6),
-  ONTIX_TOOL_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120000).default(30000),
+  ONTIX_TOOL_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120000).default(60000),
   ONTIX_MAX_EVIDENCE_CHARS: z.coerce.number().int().min(2000).max(200000).default(40000),
   ONTIX_TOKEN_ENCRYPTION_KEY: optionalString,
 });
