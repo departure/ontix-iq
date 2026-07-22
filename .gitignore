@@ -1,0 +1,9 @@
+node_modules
+.nuxt
+.output
+.env
+.DS_Store
+.nova
+certs/
+server/cache/
+__pycache__/
