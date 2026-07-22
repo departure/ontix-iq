@@ -3,10 +3,17 @@ import { SkillRegistry } from "../src/core/skills.js";
 import { readConfig } from "../src/config.js";
 import {
   analyzeClientTasks,
+  calculateMonthlyTaskAverages,
+  calculateQuarterForecast,
+  calculateServiceGrowth,
+  calculateTaskMentionAnalysis,
   countTasksByCreatedAt,
+  dateRangeBoundsInTimeZone,
   getAllAssignedTasks,
   getTasksCreatedBetween,
+  getTasksCreatedByCursor,
   isReadOnlyAsanaTool,
+  monthBoundsInTimeZone,
   parseTaskSearchCount,
   taskMatchesCountFilters,
   yearBoundsInTimeZone,
@@ -346,5 +353,150 @@ describe("Asana capability policy", () => {
     expect(analysis.internalTaskCount).toBe(1);
     expect(analysis.unclassifiedTaskCount).toBe(1);
     expect(analysis.unattributedTaskCount).toBe(1);
+  });
+
+  it("unions synonymous full-text matches before calculating percentages", () => {
+    const analysis = calculateTaskMentionAnalysis(100, [
+      { term: "video", tasks: [{ gid: "1" }, { gid: "2" }, { gid: "2" }] },
+      { term: "YouTube", tasks: [{ gid: "2" }, { gid: "3" }] },
+      { term: "TikTok", tasks: [] },
+    ]);
+    expect(analysis.matchingTaskCount).toBe(3);
+    expect(analysis.percentage).toBe(3);
+    expect(analysis.termCounts).toEqual([
+      { term: "video", count: 2 },
+      { term: "YouTube", count: 2 },
+      { term: "TikTok", count: 0 },
+    ]);
+  });
+
+  it("returns a zero mention percentage for an empty year", () => {
+    expect(calculateTaskMentionAnalysis(0, [{ term: "video", tasks: [] }])).toEqual({
+      matchingTaskCount: 0,
+      percentage: 0,
+      termCounts: [{ term: "video", count: 0 }],
+    });
+  });
+
+  it("converts inclusive business periods across daylight-saving boundaries", () => {
+    const bounds = dateRangeBoundsInTimeZone(
+      "2026-01-01",
+      "2026-06-30",
+      "America/Los_Angeles",
+    );
+    expect(bounds.start.toISOString()).toBe("2026-01-01T08:00:00.000Z");
+    expect(bounds.end.toISOString()).toBe("2026-07-01T07:00:00.000Z");
+  });
+
+  it("validates comparison period calendar dates and ordering", () => {
+    expect(() =>
+      dateRangeBoundsInTimeZone("2026-02-30", "2026-03-01", "America/Los_Angeles"),
+    ).toThrow("Invalid calendar date");
+    expect(() =>
+      dateRangeBoundsInTimeZone("2026-07-01", "2026-06-30", "America/Los_Angeles"),
+    ).toThrow("must not follow");
+  });
+
+  it("aggregates exact monthly counts into yearly and combined averages", () => {
+    expect(
+      calculateMonthlyTaskAverages([
+        { year: 2023, month: 1, count: 10 },
+        { year: 2023, month: 2, count: 20 },
+        { year: 2024, month: 1, count: 30 },
+      ]),
+    ).toEqual({
+      years: [
+        { year: 2023, monthCount: 2, total: 30, monthlyAverage: 15 },
+        { year: 2024, monthCount: 1, total: 30, monthlyAverage: 30 },
+      ],
+      monthCount: 3,
+      total: 60,
+      monthlyAverage: 20,
+    });
+  });
+
+  it("uses timezone-correct calendar month boundaries across years", () => {
+    const june = monthBoundsInTimeZone(2026, 6, "America/Los_Angeles");
+    expect(june.start.toISOString()).toBe("2026-06-01T07:00:00.000Z");
+    expect(june.end.toISOString()).toBe("2026-07-01T07:00:00.000Z");
+    const december = monthBoundsInTimeZone(2025, 12, "America/Los_Angeles");
+    expect(december.end.toISOString()).toBe("2026-01-01T08:00:00.000Z");
+  });
+
+  it("efficiently cursor-pages created tasks beyond the search limit", async () => {
+    const start = new Date("2023-01-01T00:00:00.000Z");
+    const end = new Date("2024-01-01T00:00:00.000Z");
+    const rows = Array.from({ length: 250 }, (_, index) => ({
+      gid: String(index),
+      created_at: new Date(start.getTime() + (index + 1) * 1000).toISOString(),
+    }));
+    const result = await getTasksCreatedByCursor(
+      async (arguments_) => {
+        const after = Date.parse(String(arguments_.created_at_after));
+        const before = Date.parse(String(arguments_.created_at_before));
+        return {
+          structuredContent: {
+            data: rows
+              .filter((row) => {
+                const timestamp = Date.parse(row.created_at);
+                return timestamp > after && timestamp < before;
+              })
+              .slice(0, 100),
+          },
+        };
+      },
+      start,
+      end,
+      "gid,created_at",
+    );
+    expect(result.tasks).toHaveLength(250);
+    expect(result.queryCount).toBe(3);
+  });
+
+  it("normalizes quarterly seasonality so high-volume years do not dominate", () => {
+    const yearlyQuarters = [
+      { year: 2023, counts: [979, 567, 980, 1279] },
+      { year: 2024, counts: [1407, 740, 962, 1662] },
+      { year: 2025, counts: [601, 561, 417, 243] },
+    ];
+    const months = yearlyQuarters.flatMap(({ year, counts }) =>
+      counts.flatMap((count, quarter) =>
+        Array.from({ length: 3 }, (_, offset) => ({
+          year,
+          month: quarter * 3 + offset + 1,
+          count: offset === 0 ? count : 0,
+        })),
+      ),
+    );
+    const forecast = calculateQuarterForecast(months);
+    expect(forecast.winner).toBe("Q1");
+    expect(forecast.confidence).toBe("low");
+    expect(forecast.quarters[0]?.averageShare).toBeCloseTo(0.294, 3);
+    expect(forecast.history.map((year) => year.total)).toEqual([3805, 4771, 1822]);
+  });
+
+  it("compares service growth using monthly rates for partial years", () => {
+    const growth = calculateServiceGrowth([
+      {
+        service: "Branding",
+        periods: [
+          { label: "2024", count: 120, monthCount: 12 },
+          { label: "2025", count: 132, monthCount: 12 },
+          { label: "H1 2026", count: 72, monthCount: 6 },
+        ],
+      },
+      {
+        service: "Web development",
+        periods: [
+          { label: "2024", count: 120, monthCount: 12 },
+          { label: "2025", count: 180, monthCount: 12 },
+          { label: "H1 2026", count: 120, monthCount: 6 },
+        ],
+      },
+    ]);
+    expect(growth.winner).toBe("Web development");
+    expect(growth.confidence).toBe("moderate");
+    expect(growth.services[1]?.periods[2]?.monthlyRate).toBe(20);
+    expect(growth.services[1]?.latestGrowth).toBeCloseTo(1 / 3);
   });
 });

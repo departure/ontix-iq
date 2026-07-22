@@ -17,6 +17,11 @@ const mutatingName =
 const compareTaskCountsTool = "asana__compare_task_counts";
 const compareCreatedTaskCountsTool = "asana__compare_created_task_counts";
 const analyzeClientTaskCountsTool = "asana__analyze_client_task_counts";
+const analyzeTaskMentionsTool = "asana__analyze_task_mentions";
+const compareCreatedTaskPeriodsTool = "asana__compare_created_task_periods";
+const analyzeMonthlyTaskAveragesTool = "asana__analyze_monthly_task_averages";
+const forecastBusiestQuarterTool = "asana__forecast_busiest_quarter";
+const forecastServiceGrowthTool = "asana__forecast_service_growth";
 const taskSearchLimit = 100;
 const taskCountFilterNames = [
   "completed",
@@ -196,6 +201,70 @@ export async function getTasksCreatedBetween(
   return collectWindow(start, end, filters);
 }
 
+export async function getTasksCreatedByCursor(
+  search: TaskSearchCall,
+  start: Date,
+  end: Date,
+  optFields: string,
+  filters: Record<string, unknown> = {},
+): Promise<{ tasks: Record<string, unknown>[]; queryCount: number }> {
+  if (
+    !Number.isFinite(start.getTime()) ||
+    !Number.isFinite(end.getTime()) ||
+    start.getTime() >= end.getTime()
+  ) {
+    throw new Error("Created-task cursor retrieval requires a valid non-empty time range");
+  }
+  const tasks = new Map<string, Record<string, unknown>>();
+  let cursor = start.getTime() - 1;
+  let queryCount = 0;
+  for (let page = 0; page < 1000; page++) {
+    const result = await search({
+      ...filters,
+      created_at_after: new Date(cursor).toISOString(),
+      created_at_before: end.toISOString(),
+      sort_by: "created_at",
+      sort_ascending: true,
+      limit: taskSearchLimit,
+      opt_fields: optFields,
+    });
+    queryCount += 1;
+    const rows = extractTaskSearchRows(result).map((task) => {
+      if (
+        !isRecord(task) ||
+        typeof task.gid !== "string" ||
+        typeof task.created_at !== "string"
+      ) {
+        throw new Error("Asana cursor search returned a task without a GID or creation time");
+      }
+      return task;
+    });
+    for (const task of rows) tasks.set(task.gid as string, task);
+    if (rows.length < taskSearchLimit) return { tasks: [...tasks.values()], queryCount };
+
+    const lastTimestamp = Date.parse(rows.at(-1)?.created_at as string);
+    if (!Number.isFinite(lastTimestamp) || lastTimestamp <= cursor) {
+      throw new Error("Asana created-task cursor did not advance");
+    }
+    const boundaryRows = rows.filter(
+      (task) => Date.parse(task.created_at as string) === lastTimestamp,
+    );
+    if (boundaryRows.length > 1) {
+      const boundary = await getTasksCreatedBetween(
+        search,
+        filters,
+        new Date(lastTimestamp),
+        new Date(lastTimestamp + 1),
+        optFields,
+      );
+      queryCount += boundary.queryCount;
+      for (const task of boundary.tasks) tasks.set(task.gid as string, task);
+    }
+    cursor = lastTimestamp;
+  }
+  throw new Error("Asana created-task cursor retrieval exceeded 1000 pages");
+}
+
 export type ClientTaskAnalysis = {
   clients: Array<{
     client: string;
@@ -292,6 +361,296 @@ export function analyzeClientTasks(tasks: Record<string, unknown>[]): ClientTask
   };
 }
 
+export function calculateTaskMentionAnalysis(
+  totalTaskCount: number,
+  matches: Array<{ term: string; tasks: Record<string, unknown>[] }>,
+): {
+  matchingTaskCount: number;
+  percentage: number;
+  termCounts: Array<{ term: string; count: number }>;
+} {
+  if (!Number.isSafeInteger(totalTaskCount) || totalTaskCount < 0) {
+    throw new Error("Total task count must be a non-negative integer");
+  }
+  const allMatches = new Set<string>();
+  const termCounts = matches.map(({ term, tasks }) => {
+    const termMatches = new Set<string>();
+    for (const task of tasks) {
+      if (typeof task.gid !== "string") continue;
+      termMatches.add(task.gid);
+      allMatches.add(task.gid);
+    }
+    return { term, count: termMatches.size };
+  });
+  const matchingTaskCount = allMatches.size;
+  return {
+    matchingTaskCount,
+    percentage: totalTaskCount === 0 ? 0 : (matchingTaskCount / totalTaskCount) * 100,
+    termCounts,
+  };
+}
+
+export function dateRangeBoundsInTimeZone(
+  from: string,
+  through: string,
+  timeZone: string,
+): { start: Date; end: Date } {
+  const fromParts = parseCalendarDate(from);
+  const throughParts = parseCalendarDate(through);
+  const fromOrdinal = Date.UTC(fromParts.year, fromParts.month - 1, fromParts.day);
+  const throughOrdinal = Date.UTC(throughParts.year, throughParts.month - 1, throughParts.day);
+  if (fromOrdinal > throughOrdinal) throw new Error("Period start date must not follow its end date");
+  const dayAfterThrough = new Date(throughOrdinal + 86_400_000).toISOString().slice(0, 10);
+  return {
+    start: startOfDateInTimeZone(from, timeZone),
+    end: startOfDateInTimeZone(dayAfterThrough, timeZone),
+  };
+}
+
+export function monthBoundsInTimeZone(
+  year: number,
+  month: number,
+  timeZone: string,
+): { start: Date; end: Date } {
+  if (!Number.isInteger(year) || year < 2000 || year > 2100) {
+    throw new Error("Year must be an integer from 2000 through 2100");
+  }
+  if (!Number.isInteger(month) || month < 1 || month > 12) {
+    throw new Error("Month must be an integer from 1 through 12");
+  }
+  const start = `${year}-${String(month).padStart(2, "0")}-01`;
+  const nextMonth = new Date(Date.UTC(year, month, 1)).toISOString().slice(0, 10);
+  return {
+    start: startOfDateInTimeZone(start, timeZone),
+    end: startOfDateInTimeZone(nextMonth, timeZone),
+  };
+}
+
+export function calculateMonthlyTaskAverages(
+  months: Array<{ year: number; month: number; count: number }>,
+): {
+  years: Array<{ year: number; monthCount: number; total: number; monthlyAverage: number }>;
+  monthCount: number;
+  total: number;
+  monthlyAverage: number;
+} {
+  const grouped = new Map<number, { monthCount: number; total: number }>();
+  for (const item of months) {
+    if (
+      !Number.isInteger(item.year) ||
+      !Number.isInteger(item.month) ||
+      item.month < 1 ||
+      item.month > 12 ||
+      !Number.isSafeInteger(item.count) ||
+      item.count < 0
+    ) {
+      throw new Error("Monthly task counts require valid years, months, and non-negative totals");
+    }
+    const year = grouped.get(item.year) ?? { monthCount: 0, total: 0 };
+    year.monthCount += 1;
+    year.total += item.count;
+    grouped.set(item.year, year);
+  }
+  const years = [...grouped.entries()]
+    .map(([year, values]) => ({
+      year,
+      ...values,
+      monthlyAverage: values.monthCount === 0 ? 0 : values.total / values.monthCount,
+    }))
+    .sort((left, right) => left.year - right.year);
+  const total = years.reduce((sum, year) => sum + year.total, 0);
+  const monthCount = years.reduce((sum, year) => sum + year.monthCount, 0);
+  return {
+    years,
+    monthCount,
+    total,
+    monthlyAverage: monthCount === 0 ? 0 : total / monthCount,
+  };
+}
+
+export function calculateQuarterForecast(
+  months: Array<{ year: number; month: number; count: number }>,
+): {
+  winner: string;
+  confidence: "low" | "moderate" | "high";
+  margin: number;
+  quarters: Array<{
+    quarter: string;
+    averageShare: number;
+    averageCount: number;
+    medianCount: number;
+    yearsBusiest: number;
+  }>;
+  history: Array<{
+    year: number;
+    total: number;
+    quarters: Array<{ quarter: string; count: number; share: number }>;
+  }>;
+} {
+  const byYear = new Map<number, number[]>();
+  for (const item of months) {
+    if (
+      !Number.isInteger(item.year) ||
+      !Number.isInteger(item.month) ||
+      item.month < 1 ||
+      item.month > 12 ||
+      !Number.isSafeInteger(item.count) ||
+      item.count < 0
+    ) {
+      throw new Error("Quarter forecasts require valid monthly task counts");
+    }
+    const quarters = byYear.get(item.year) ?? [0, 0, 0, 0];
+    quarters[Math.floor((item.month - 1) / 3)] =
+      (quarters[Math.floor((item.month - 1) / 3)] ?? 0) + item.count;
+    byYear.set(item.year, quarters);
+  }
+  const history = [...byYear.entries()]
+    .map(([year, counts]) => {
+      const total = counts.reduce((sum, count) => sum + count, 0);
+      return {
+        year,
+        total,
+        quarters: counts.map((count, index) => ({
+          quarter: `Q${index + 1}`,
+          count,
+          share: total === 0 ? 0 : count / total,
+        })),
+      };
+    })
+    .filter((year) => year.total > 0)
+    .sort((left, right) => left.year - right.year);
+  if (history.length === 0) throw new Error("Quarter forecast has no historical tasks");
+
+  const quarters = [0, 1, 2, 3]
+    .map((index) => {
+      const observations = history.map((year) => year.quarters[index]?.count ?? 0);
+      const shares = history.map((year) => year.quarters[index]?.share ?? 0);
+      const sorted = [...observations].sort((left, right) => left - right);
+      const middle = Math.floor(sorted.length / 2);
+      const medianCount =
+        sorted.length % 2 === 0
+          ? ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2
+          : (sorted[middle] ?? 0);
+      return {
+        quarter: `Q${index + 1}`,
+        averageShare: shares.reduce((sum, share) => sum + share, 0) / shares.length,
+        averageCount:
+          observations.reduce((sum, count) => sum + count, 0) / observations.length,
+        medianCount,
+        yearsBusiest: history.filter((year) => {
+          const maximum = Math.max(...year.quarters.map((quarter) => quarter.count));
+          return year.quarters[index]?.count === maximum;
+        }).length,
+      };
+    })
+    .sort(
+      (left, right) =>
+        right.averageShare - left.averageShare || left.quarter.localeCompare(right.quarter),
+    );
+  const margin = (quarters[0]?.averageShare ?? 0) - (quarters[1]?.averageShare ?? 0);
+  const winnerConsistency = (quarters[0]?.yearsBusiest ?? 0) / history.length;
+  const confidence =
+    margin >= 0.08 && winnerConsistency >= 2 / 3
+      ? "high"
+      : margin >= 0.03 || winnerConsistency >= 2 / 3
+        ? "moderate"
+        : "low";
+  return {
+    winner: quarters[0]?.quarter ?? "Q1",
+    confidence,
+    margin,
+    quarters,
+    history,
+  };
+}
+
+export function calculateServiceGrowth(
+  services: Array<{
+    service: string;
+    periods: Array<{ label: string; count: number; monthCount: number }>;
+  }>,
+): {
+  winner: string;
+  confidence: "low" | "moderate" | "high";
+  services: Array<{
+    service: string;
+    periods: Array<{
+      label: string;
+      count: number;
+      monthCount: number;
+      monthlyRate: number;
+    }>;
+    changes: Array<{
+      from: string;
+      to: string;
+      percentageChange?: number;
+    }>;
+    latestGrowth?: number;
+  }>;
+} {
+  if (services.length < 2) throw new Error("Service growth requires at least two services");
+  const analyzed = services.map((service) => {
+    if (!service.service.trim() || service.periods.length < 2) {
+      throw new Error("Each service requires a name and at least two periods");
+    }
+    const periods = service.periods.map((period) => {
+      if (
+        !period.label.trim() ||
+        !Number.isSafeInteger(period.count) ||
+        period.count < 0 ||
+        !Number.isInteger(period.monthCount) ||
+        period.monthCount < 1
+      ) {
+        throw new Error("Service growth periods require valid counts and month totals");
+      }
+      return { ...period, monthlyRate: period.count / period.monthCount };
+    });
+    const changes = periods.slice(1).map((period, index) => {
+      const previous = periods[index];
+      return {
+        from: previous?.label ?? "",
+        to: period.label,
+        ...(previous && previous.monthlyRate > 0
+          ? {
+              percentageChange:
+                (period.monthlyRate - previous.monthlyRate) / previous.monthlyRate,
+            }
+          : {}),
+      };
+    });
+    return {
+      service: service.service,
+      periods,
+      changes,
+      latestGrowth: changes.at(-1)?.percentageChange,
+    };
+  });
+  const ranked = [...analyzed].sort(
+    (left, right) =>
+      (right.latestGrowth ?? Number.NEGATIVE_INFINITY) -
+        (left.latestGrowth ?? Number.NEGATIVE_INFINITY) ||
+      left.service.localeCompare(right.service),
+  );
+  const winner = ranked[0]?.service ?? analyzed[0]?.service ?? "";
+  const first = ranked[0]?.latestGrowth;
+  const second = ranked[1]?.latestGrowth;
+  const margin =
+    first === undefined || second === undefined ? 0 : Math.abs(first - second);
+  const winnerChanges = ranked[0]?.changes
+    .map((change) => change.percentageChange)
+    .filter((value): value is number => value !== undefined) ?? [];
+  const directionConsistent =
+    winnerChanges.length > 1 &&
+    winnerChanges.every((value) => Math.sign(value) === Math.sign(winnerChanges[0] ?? 0));
+  const confidence =
+    margin >= 0.25 && directionConsistent
+      ? "high"
+      : margin >= 0.15 || directionConsistent
+        ? "moderate"
+        : "low";
+  return { winner, confidence, services: analyzed };
+}
+
 export function yearBoundsInTimeZone(
   year: number,
   timeZone: string,
@@ -371,6 +730,11 @@ export class AsanaSkill implements Skill {
   private readonly oauth: AsanaOAuthProvider;
   private authGeneration = 0;
   private refreshPromise?: Promise<void>;
+  private createdTaskTimelineCache?: {
+    start: number;
+    end: number;
+    tasks: Record<string, unknown>[];
+  };
 
   constructor(private readonly config: AppConfig) {
     this.oauth = new AsanaOAuthProvider(config);
@@ -558,6 +922,236 @@ export class AsanaSkill implements Skill {
           additionalProperties: false,
         },
       });
+      tools.push({
+        name: analyzeTaskMentionsTool,
+        skill: this.name,
+        description:
+          "Exhaustive percentage of tasks created in a year whose Asana full text mentions a topic. ALWAYS use this for questions asking what percentage or how many tasks mentioned, referenced, or involved a keyword/topic. It partitions both the denominator and every full-text keyword search around Asana's 100-result limit, unions matching task GIDs, and returns an exact percentage. Supply separate synonymous terms to OR them together. For DEPARTURE video-work questions, use the organization keywords video, YouTube, and TikTok.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            topic: {
+              type: "string",
+              description: "Human-readable topic shown in the result, such as video work.",
+            },
+            terms: {
+              type: "array",
+              minItems: 1,
+              maxItems: 20,
+              uniqueItems: true,
+              description:
+                "Full-text terms to search independently and combine with OR semantics.",
+              items: { type: "string", minLength: 1 },
+            },
+            year: {
+              type: "integer",
+              minimum: 2000,
+              maximum: 2100,
+              description: "Calendar year in which the tasks were created.",
+            },
+            time_zone: {
+              type: "string",
+              default: "America/Los_Angeles",
+              description:
+                "IANA time zone defining the calendar-year boundaries. Use the organization's primary time zone.",
+            },
+          },
+          required: ["topic", "terms", "year"],
+          additionalProperties: false,
+        },
+      });
+      tools.push({
+        name: compareCreatedTaskPeriodsTool,
+        skill: this.name,
+        description:
+          "Exhaustive comparison of tasks CREATED in two or more date periods. ALWAYS use this after the user clarifies that started means created in Asana, or whenever they compare created-task totals across halves, quarters, months, years, or custom ranges. Each from/through range is inclusive and converted using the organization time zone. The tool partitions around Asana's 100-result limit and returns exact totals plus absolute and percentage change. Do not use raw search_tasks results for period totals.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            periods: {
+              type: "array",
+              minItems: 2,
+              maxItems: 8,
+              description: "Periods to count and compare.",
+              items: {
+                type: "object",
+                properties: {
+                  label: {
+                    type: "string",
+                    description: "Human-readable period label, such as H1 2026.",
+                  },
+                  from: {
+                    type: "string",
+                    pattern: "^\\d{4}-\\d{2}-\\d{2}$",
+                    description: "Inclusive first calendar date.",
+                  },
+                  through: {
+                    type: "string",
+                    pattern: "^\\d{4}-\\d{2}-\\d{2}$",
+                    description: "Inclusive final calendar date.",
+                  },
+                },
+                required: ["label", "from", "through"],
+                additionalProperties: false,
+              },
+            },
+            time_zone: {
+              type: "string",
+              default: "America/Los_Angeles",
+              description:
+                "IANA time zone defining calendar-day boundaries. Use the organization's primary time zone.",
+            },
+          },
+          required: ["periods"],
+          additionalProperties: false,
+        },
+      });
+      tools.push({
+        name: analyzeMonthlyTaskAveragesTool,
+        skill: this.name,
+        description:
+          "Exact monthly averages of tasks CREATED across multiple years or partial years. ALWAYS use this when the user asks for average tasks per month over years, annual monthly averages, or a comparison that mixes completed years with a year-to-date period. It performs an efficient creation-time cursor scan, buckets tasks into calendar months, and returns yearly plus combined totals and averages. For January-June, set through_month to 6.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            years: {
+              type: "array",
+              minItems: 1,
+              maxItems: 10,
+              description: "Calendar years and the final month to include in each.",
+              items: {
+                type: "object",
+                properties: {
+                  year: {
+                    type: "integer",
+                    minimum: 2000,
+                    maximum: 2100,
+                  },
+                  through_month: {
+                    type: "integer",
+                    minimum: 1,
+                    maximum: 12,
+                    default: 12,
+                    description: "Last included month, where January is 1 and December is 12.",
+                  },
+                },
+                required: ["year"],
+                additionalProperties: false,
+              },
+            },
+            time_zone: {
+              type: "string",
+              default: "America/Los_Angeles",
+              description:
+                "IANA time zone defining calendar-month boundaries. Use the organization's primary time zone.",
+            },
+          },
+          required: ["years"],
+          additionalProperties: false,
+        },
+      });
+      tools.push({
+        name: forecastBusiestQuarterTool,
+        skill: this.name,
+        description:
+          "Forecast which quarter of a future year is likely to be busiest from historical CREATED-task seasonality. ALWAYS use this for questions asking which future quarter will be busiest based on prior task volumes. It scans the requested historical years once, buckets tasks by quarter, normalizes each quarter as a share of its year's total so unusually busy years do not dominate, and reports the winner, historical counts, margin, and forecast confidence.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            historical_years: {
+              type: "array",
+              minItems: 2,
+              maxItems: 10,
+              uniqueItems: true,
+              description: "Completed calendar years used to estimate quarterly seasonality.",
+              items: {
+                type: "integer",
+                minimum: 2000,
+                maximum: 2100,
+              },
+            },
+            target_year: {
+              type: "integer",
+              minimum: 2000,
+              maximum: 2100,
+              description: "Future year being forecast.",
+            },
+            time_zone: {
+              type: "string",
+              default: "America/Los_Angeles",
+              description:
+                "IANA time zone defining calendar-quarter boundaries. Use the organization's primary time zone.",
+            },
+          },
+          required: ["historical_years", "target_year"],
+          additionalProperties: false,
+        },
+      });
+      tools.push({
+        name: forecastServiceGrowthTool,
+        skill: this.name,
+        description:
+          "Forecast which service is growing faster from exact full-text CREATED-task trends. ALWAYS use this for task-volume growth comparisons between services. It unions and deduplicates each service's organization-approved keywords, reports mixed-service overlap, compares monthly task rates so partial years are comparable with full years, and ranks services by the latest growth rate with confidence. For DEPARTURE, branding terms include branding, logo, logotype, style guide, colors, lockup, identity; web terms include website, WordPress, Vue, HTML, JavaScript, CSS, UI, UX.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            services: {
+              type: "array",
+              minItems: 2,
+              maxItems: 6,
+              items: {
+                type: "object",
+                properties: {
+                  label: { type: "string" },
+                  terms: {
+                    type: "array",
+                    minItems: 1,
+                    maxItems: 20,
+                    uniqueItems: true,
+                    items: { type: "string", minLength: 1 },
+                  },
+                },
+                required: ["label", "terms"],
+                additionalProperties: false,
+              },
+            },
+            periods: {
+              type: "array",
+              minItems: 2,
+              maxItems: 6,
+              items: {
+                type: "object",
+                properties: {
+                  label: { type: "string" },
+                  from: {
+                    type: "string",
+                    pattern: "^\\d{4}-\\d{2}-\\d{2}$",
+                  },
+                  through: {
+                    type: "string",
+                    pattern: "^\\d{4}-\\d{2}-\\d{2}$",
+                  },
+                  month_count: {
+                    type: "integer",
+                    minimum: 1,
+                    maximum: 120,
+                  },
+                },
+                required: ["label", "from", "through", "month_count"],
+                additionalProperties: false,
+              },
+            },
+            time_zone: {
+              type: "string",
+              default: "America/Los_Angeles",
+              description:
+                "IANA time zone defining period boundaries. Use the organization's primary time zone.",
+            },
+          },
+          required: ["services", "periods"],
+          additionalProperties: false,
+        },
+      });
     }
     this.cachedTools = tools;
     return tools;
@@ -583,6 +1177,21 @@ export class AsanaSkill implements Skill {
     }
     if (toolName === analyzeClientTaskCountsTool) {
       return [await this.analyzeClientTaskCounts(input)];
+    }
+    if (toolName === analyzeTaskMentionsTool) {
+      return [await this.analyzeTaskMentions(input)];
+    }
+    if (toolName === compareCreatedTaskPeriodsTool) {
+      return [await this.compareCreatedTaskPeriods(input)];
+    }
+    if (toolName === analyzeMonthlyTaskAveragesTool) {
+      return [await this.analyzeMonthlyTaskAverages(input)];
+    }
+    if (toolName === forecastBusiestQuarterTool) {
+      return [await this.forecastBusiestQuarter(input)];
+    }
+    if (toolName === forecastServiceGrowthTool) {
+      return [await this.forecastServiceGrowth(input)];
     }
     const result = await this.callAsanaTool(remoteName, isRecord(input) ? input : {});
     const text = extractMcpText(result);
@@ -795,6 +1404,521 @@ export class AsanaSkill implements Skill {
     };
   }
 
+  private async analyzeTaskMentions(input: unknown): Promise<Evidence> {
+    if (
+      !isRecord(input) ||
+      typeof input.topic !== "string" ||
+      !input.topic.trim() ||
+      !Array.isArray(input.terms) ||
+      input.terms.length === 0 ||
+      typeof input.year !== "number"
+    ) {
+      throw new Error("Task mention analysis requires a topic, search terms, and calendar year");
+    }
+    const terms = [
+      ...new Map(
+        input.terms.map((term) => {
+          if (typeof term !== "string" || !term.trim()) {
+            throw new Error("Every task mention search term must be a non-empty string");
+          }
+          return [term.trim().toLowerCase(), term.trim()];
+        }),
+      ).values(),
+    ];
+    const topic = input.topic.trim();
+    const timeZone =
+      typeof input.time_zone === "string" && input.time_zone.trim()
+        ? input.time_zone.trim()
+        : "America/Los_Angeles";
+    const bounds = yearBoundsInTimeZone(input.year, timeZone);
+    const total = await countTasksByCreatedAt(
+      (arguments_) => this.callAsanaTool("search_tasks", arguments_),
+      {},
+      bounds.start,
+      bounds.end,
+    );
+    const matches: Array<{ term: string; tasks: Record<string, unknown>[] }> = [];
+    let queryCount = total.queryCount;
+    for (const term of terms) {
+      const result = await getTasksCreatedBetween(
+        (arguments_) => this.callAsanaTool("search_tasks", arguments_),
+        { text: term },
+        bounds.start,
+        bounds.end,
+        "gid,created_at",
+      );
+      matches.push({ term, tasks: result.tasks });
+      queryCount += result.queryCount;
+    }
+    const analysis = calculateTaskMentionAnalysis(total.count, matches);
+    const percentage = analysis.percentage.toFixed(1);
+    const termDetails = analysis.termCounts
+      .map(({ term, count }) => `${term}: ${count}`)
+      .join("; ");
+    return {
+      id: `ASN-${randomUUID().slice(0, 8)}`,
+      source: this.name,
+      title: `Asana ${input.year} ${topic} task mentions`,
+      locator: "https://app.asana.com/",
+      retrievedAt: new Date().toISOString(),
+      summary: redact(
+        `${analysis.matchingTaskCount} of ${total.count} tasks (${percentage}%) created in ${input.year} matched the Asana full-text terms for ${topic}. Term counts before deduplication: ${termDetails}.`,
+      ),
+      data: {
+        ...analysis,
+        totalTaskCount: total.count,
+        topic,
+        terms,
+        year: input.year,
+        timeZone,
+        queryCount,
+        exact: true,
+        searchSemantics: "Asana full-text match across task names, descriptions, and comments",
+        method: "partitioned_created_at_full_text_union",
+      },
+      query: input,
+    };
+  }
+
+  private async compareCreatedTaskPeriods(input: unknown): Promise<Evidence> {
+    if (!isRecord(input) || !Array.isArray(input.periods) || input.periods.length < 2) {
+      throw new Error("Created-task period comparison requires at least two periods");
+    }
+    const periods = input.periods.map((period) => {
+      if (
+        !isRecord(period) ||
+        typeof period.label !== "string" ||
+        !period.label.trim() ||
+        typeof period.from !== "string" ||
+        typeof period.through !== "string"
+      ) {
+        throw new Error("Each comparison period requires a label, from date, and through date");
+      }
+      return {
+        label: period.label.trim(),
+        from: period.from,
+        through: period.through,
+      };
+    });
+    const timeZone =
+      typeof input.time_zone === "string" && input.time_zone.trim()
+        ? input.time_zone.trim()
+        : "America/Los_Angeles";
+    const counts = await Promise.all(
+      periods.map(async (period) => {
+        const bounds = dateRangeBoundsInTimeZone(period.from, period.through, timeZone);
+        const result = await countTasksByCreatedAt(
+          (arguments_) => this.callAsanaTool("search_tasks", arguments_),
+          {},
+          bounds.start,
+          bounds.end,
+        );
+        return {
+          ...period,
+          count: result.count,
+          queryCount: result.queryCount,
+          range: {
+            start: bounds.start.toISOString(),
+            endExclusive: bounds.end.toISOString(),
+          },
+        };
+      }),
+    );
+    const chronological = [...counts].sort((left, right) => left.from.localeCompare(right.from));
+    const current = chronological.at(-1);
+    const previous = chronological.at(-2);
+    const change = current && previous ? current.count - previous.count : 0;
+    const percentageChange =
+      previous && previous.count > 0 ? (change / previous.count) * 100 : undefined;
+    const comparison =
+      current && previous
+        ? change === 0
+          ? `${current.label} and ${previous.label} had the same number of tasks.`
+          : `${current.label} had ${Math.abs(change)} ${change > 0 ? "more" : "fewer"} tasks than ${previous.label}` +
+            (percentageChange === undefined
+              ? "."
+              : ` (${Math.abs(percentageChange).toFixed(1)}% ${change > 0 ? "increase" : "decrease"}).`)
+        : "";
+    const totals = counts.map((period) => `${period.label}: ${period.count}`).join("; ");
+    return {
+      id: `ASN-${randomUUID().slice(0, 8)}`,
+      source: this.name,
+      title: "Asana created-task period comparison",
+      locator: "https://app.asana.com/",
+      retrievedAt: new Date().toISOString(),
+      summary: redact(`${totals}. ${comparison}`),
+      data: {
+        periods: counts,
+        comparison:
+          current && previous
+            ? {
+                current: current.label,
+                previous: previous.label,
+                change,
+                percentageChange,
+              }
+            : undefined,
+        timeZone,
+        exact: true,
+        method: "partitioned_created_at_period_comparison",
+      },
+      query: input,
+    };
+  }
+
+  private async analyzeMonthlyTaskAverages(input: unknown): Promise<Evidence> {
+    if (!isRecord(input) || !Array.isArray(input.years) || input.years.length === 0) {
+      throw new Error("Monthly task average analysis requires at least one year");
+    }
+    const years = input.years.map((value) => {
+      if (!isRecord(value) || typeof value.year !== "number") {
+        throw new Error("Each monthly task average year requires a numeric year");
+      }
+      const throughMonth =
+        value.through_month === undefined ? 12 : Number(value.through_month);
+      if (
+        !Number.isInteger(value.year) ||
+        value.year < 2000 ||
+        value.year > 2100 ||
+        !Number.isInteger(throughMonth) ||
+        throughMonth < 1 ||
+        throughMonth > 12
+      ) {
+        throw new Error("Monthly task average years and through months are invalid");
+      }
+      return { year: value.year, throughMonth };
+    });
+    if (new Set(years.map((item) => item.year)).size !== years.length) {
+      throw new Error("Monthly task average years must be unique");
+    }
+    const timeZone =
+      typeof input.time_zone === "string" && input.time_zone.trim()
+        ? input.time_zone.trim()
+        : "America/Los_Angeles";
+    const requestedMonths = years.flatMap(({ year, throughMonth }) =>
+      Array.from({ length: throughMonth }, (_, index) => ({ year, month: index + 1 })),
+    );
+    const sortedMonths = [...requestedMonths].sort(
+      (left, right) => left.year - right.year || left.month - right.month,
+    );
+    const firstMonth = sortedMonths[0];
+    const lastMonth = sortedMonths.at(-1);
+    if (!firstMonth || !lastMonth) throw new Error("No calendar months were requested");
+    const firstBounds = monthBoundsInTimeZone(firstMonth.year, firstMonth.month, timeZone);
+    const lastBounds = monthBoundsInTimeZone(lastMonth.year, lastMonth.month, timeZone);
+    const retrieval = await this.getCreatedTaskTimeline(
+      firstBounds.start,
+      lastBounds.end,
+    );
+    const requestedKeys = new Set(
+      requestedMonths.map(({ year, month }) => `${year}-${month}`),
+    );
+    const countsByMonth = new Map<string, number>();
+    for (const task of retrieval.tasks) {
+      if (typeof task.created_at !== "string") continue;
+      const month = calendarMonthInTimeZone(task.created_at, timeZone);
+      const key = `${month.year}-${month.month}`;
+      if (requestedKeys.has(key)) countsByMonth.set(key, (countsByMonth.get(key) ?? 0) + 1);
+    }
+    const monthResults = requestedMonths.map(({ year, month }) => ({
+      year,
+      month,
+      count: countsByMonth.get(`${year}-${month}`) ?? 0,
+    }));
+    const analysis = calculateMonthlyTaskAverages(monthResults);
+    const fullYearSet = new Set(
+      years.filter((item) => item.throughMonth === 12).map((item) => item.year),
+    );
+    const fullYearMonths = monthResults.filter((item) => fullYearSet.has(item.year));
+    const completedYearBaseline = calculateMonthlyTaskAverages(fullYearMonths);
+    const yearlySummary = analysis.years
+      .map(
+        (year) =>
+          `${year.year}: ${year.total} tasks over ${year.monthCount} months (${year.monthlyAverage.toFixed(1)}/month)`,
+      )
+      .join("; ");
+    const baselineSummary =
+      completedYearBaseline.monthCount > 0
+        ? `Completed-year baseline: ${completedYearBaseline.total} tasks over ${completedYearBaseline.monthCount} months (${completedYearBaseline.monthlyAverage.toFixed(1)}/month).`
+        : "";
+    return {
+      id: `ASN-${randomUUID().slice(0, 8)}`,
+      source: this.name,
+      title: "Asana monthly created-task averages",
+      locator: "https://app.asana.com/",
+      retrievedAt: new Date().toISOString(),
+      summary: redact(`${yearlySummary}. ${baselineSummary}`),
+      data: {
+        ...analysis,
+        months: monthResults,
+        completedYearBaseline,
+        requestedYears: years,
+        timeZone,
+        queryCount: retrieval.queryCount,
+        exact: true,
+        method: "created_at_cursor_scan_bucketed_by_calendar_month",
+      },
+      query: input,
+    };
+  }
+
+  private async forecastBusiestQuarter(input: unknown): Promise<Evidence> {
+    if (
+      !isRecord(input) ||
+      !Array.isArray(input.historical_years) ||
+      input.historical_years.length < 2 ||
+      typeof input.target_year !== "number"
+    ) {
+      throw new Error("Quarter forecast requires historical years and a target year");
+    }
+    const historicalYears = input.historical_years.map((year) => {
+      if (typeof year !== "number" || !Number.isInteger(year) || year < 2000 || year > 2100) {
+        throw new Error("Quarter forecast historical years are invalid");
+      }
+      return year;
+    });
+    if (new Set(historicalYears).size !== historicalYears.length) {
+      throw new Error("Quarter forecast historical years must be unique");
+    }
+    if (
+      !Number.isInteger(input.target_year) ||
+      input.target_year < 2000 ||
+      input.target_year > 2100
+    ) {
+      throw new Error("Quarter forecast target year is invalid");
+    }
+    const timeZone =
+      typeof input.time_zone === "string" && input.time_zone.trim()
+        ? input.time_zone.trim()
+        : "America/Los_Angeles";
+    const firstYear = Math.min(...historicalYears);
+    const lastYear = Math.max(...historicalYears);
+    const start = monthBoundsInTimeZone(firstYear, 1, timeZone).start;
+    const end = monthBoundsInTimeZone(lastYear, 12, timeZone).end;
+    const retrieval = await this.getCreatedTaskTimeline(
+      start,
+      end,
+    );
+    const requestedYears = new Set(historicalYears);
+    const counts = new Map<string, number>();
+    for (const task of retrieval.tasks) {
+      if (typeof task.created_at !== "string") continue;
+      const month = calendarMonthInTimeZone(task.created_at, timeZone);
+      if (!requestedYears.has(month.year)) continue;
+      const key = `${month.year}-${month.month}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    const months = historicalYears.flatMap((year) =>
+      Array.from({ length: 12 }, (_, index) => ({
+        year,
+        month: index + 1,
+        count: counts.get(`${year}-${index + 1}`) ?? 0,
+      })),
+    );
+    const forecast = calculateQuarterForecast(months);
+    const shares = forecast.quarters
+      .map((quarter) => `${quarter.quarter}: ${(quarter.averageShare * 100).toFixed(1)}%`)
+      .join("; ");
+    const historicalWinners = forecast.history
+      .map((year) => {
+        const maximum = Math.max(...year.quarters.map((quarter) => quarter.count));
+        const winners = year.quarters
+          .filter((quarter) => quarter.count === maximum)
+          .map((quarter) => quarter.quarter)
+          .join("/");
+        return `${year.year}: ${winners}`;
+      })
+      .join("; ");
+    return {
+      id: `ASN-${randomUUID().slice(0, 8)}`,
+      source: this.name,
+      title: `Asana ${input.target_year} busiest-quarter forecast`,
+      locator: "https://app.asana.com/",
+      retrievedAt: new Date().toISOString(),
+      summary: redact(
+        `${forecast.winner} is the most likely busiest quarter of ${input.target_year}, based on average normalized historical task share (${shares}). Confidence: ${forecast.confidence}; annual historical winners were ${historicalWinners}.`,
+      ),
+      data: {
+        ...forecast,
+        historicalYears,
+        targetYear: input.target_year,
+        timeZone,
+        totalHistoricalTasks: months.reduce((sum, month) => sum + month.count, 0),
+        queryCount: retrieval.queryCount,
+        exactHistoricalCounts: true,
+        forecast: true,
+        method: "normalized_historical_quarter_share",
+      },
+      query: input,
+    };
+  }
+
+  private async forecastServiceGrowth(input: unknown): Promise<Evidence> {
+    if (
+      !isRecord(input) ||
+      !Array.isArray(input.services) ||
+      input.services.length < 2 ||
+      !Array.isArray(input.periods) ||
+      input.periods.length < 2
+    ) {
+      throw new Error("Service growth forecast requires services and comparison periods");
+    }
+    const services = input.services.map((service) => {
+      if (
+        !isRecord(service) ||
+        typeof service.label !== "string" ||
+        !service.label.trim() ||
+        !Array.isArray(service.terms) ||
+        service.terms.length === 0
+      ) {
+        throw new Error("Each service growth entry requires a label and search terms");
+      }
+      const terms = [
+        ...new Map(
+          service.terms.map((term) => {
+            if (typeof term !== "string" || !term.trim()) {
+              throw new Error("Service growth search terms must be non-empty strings");
+            }
+            return [term.trim().toLowerCase(), term.trim()];
+          }),
+        ).values(),
+      ];
+      return { label: service.label.trim(), terms };
+    });
+    const timeZone =
+      typeof input.time_zone === "string" && input.time_zone.trim()
+        ? input.time_zone.trim()
+        : "America/Los_Angeles";
+    const periods = input.periods
+      .map((period) => {
+        if (
+          !isRecord(period) ||
+          typeof period.label !== "string" ||
+          !period.label.trim() ||
+          typeof period.from !== "string" ||
+          typeof period.through !== "string" ||
+          typeof period.month_count !== "number" ||
+          !Number.isInteger(period.month_count) ||
+          period.month_count < 1
+        ) {
+          throw new Error("Each service growth period requires dates and a month count");
+        }
+        const bounds = dateRangeBoundsInTimeZone(period.from, period.through, timeZone);
+        return {
+          label: period.label.trim(),
+          from: period.from,
+          through: period.through,
+          monthCount: period.month_count,
+          start: bounds.start.getTime(),
+          end: bounds.end.getTime(),
+        };
+      })
+      .sort((left, right) => left.start - right.start);
+    const overallStart = new Date(Math.min(...periods.map((period) => period.start)));
+    const overallEnd = new Date(Math.max(...periods.map((period) => period.end)));
+    const uniqueTerms = [
+      ...new Map(
+        services.flatMap((service) =>
+          service.terms.map((term) => [term.toLowerCase(), term] as const),
+        ),
+      ).values(),
+    ];
+    const termTasks = new Map<string, Record<string, unknown>[]>();
+    let queryCount = 0;
+    for (const term of uniqueTerms) {
+      const result = await getTasksCreatedByCursor(
+        (arguments_) => this.callAsanaTool("search_tasks", arguments_),
+        overallStart,
+        overallEnd,
+        "gid,created_at",
+        { text: term },
+      );
+      termTasks.set(term.toLowerCase(), result.tasks);
+      queryCount += result.queryCount;
+    }
+    const serviceTasks = services.map((service) => {
+      const tasks = new Map<string, Record<string, unknown>>();
+      for (const term of service.terms) {
+        for (const task of termTasks.get(term.toLowerCase()) ?? []) {
+          if (typeof task.gid === "string") tasks.set(task.gid, task);
+        }
+      }
+      return { service: service.label, tasks };
+    });
+    const growthInput = serviceTasks.map((service) => ({
+      service: service.service,
+      periods: periods.map((period) => ({
+        label: period.label,
+        monthCount: period.monthCount,
+        count: [...service.tasks.values()].filter((task) => {
+          if (typeof task.created_at !== "string") return false;
+          const timestamp = Date.parse(task.created_at);
+          return timestamp >= period.start && timestamp < period.end;
+        }).length,
+      })),
+    }));
+    const growth = calculateServiceGrowth(growthInput);
+    const mixedByPeriod = periods.map((period) => {
+      const memberships = new Map<string, number>();
+      for (const service of serviceTasks) {
+        for (const task of service.tasks.values()) {
+          if (typeof task.gid !== "string" || typeof task.created_at !== "string") continue;
+          const timestamp = Date.parse(task.created_at);
+          if (timestamp >= period.start && timestamp < period.end) {
+            memberships.set(task.gid, (memberships.get(task.gid) ?? 0) + 1);
+          }
+        }
+      }
+      return {
+        label: period.label,
+        count: [...memberships.values()].filter((count) => count > 1).length,
+      };
+    });
+    const serviceSummary = growth.services
+      .map((service) => {
+        const rates = service.periods
+          .map((period) => `${period.label}: ${period.count} (${period.monthlyRate.toFixed(1)}/month)`)
+          .join(", ");
+        const latest =
+          service.latestGrowth === undefined
+            ? "latest growth unavailable"
+            : `${service.latestGrowth >= 0 ? "+" : ""}${(service.latestGrowth * 100).toFixed(1)}% latest growth`;
+        return `${service.service} — ${rates}; ${latest}`;
+      })
+      .join(". ");
+    return {
+      id: `ASN-${randomUUID().slice(0, 8)}`,
+      source: this.name,
+      title: "Asana service task-growth forecast",
+      locator: "https://app.asana.com/",
+      retrievedAt: new Date().toISOString(),
+      summary: redact(
+        `${growth.winner} is likely to grow faster based on the latest monthly task-rate change. Confidence: ${growth.confidence}. ${serviceSummary}. Mixed-service matches: ${mixedByPeriod.map((period) => `${period.label}: ${period.count}`).join("; ")}.`,
+      ),
+      data: {
+        ...growth,
+        mixedByPeriod,
+        services: growth.services.map((service) => ({
+          ...service,
+          terms: services.find((item) => item.label === service.service)?.terms ?? [],
+        })),
+        periods: periods.map(({ label, from, through, monthCount }) => ({
+          label,
+          from,
+          through,
+          monthCount,
+        })),
+        timeZone,
+        queryCount,
+        exactHistoricalMatches: true,
+        forecast: true,
+        searchSemantics: "Asana full-text match across task names, descriptions, and comments",
+        method: "full_text_service_union_monthly_rate_growth",
+      },
+      query: input,
+    };
+  }
+
   async doctor(): Promise<DoctorResult> {
     if (!this.config.asana.clientId || !this.config.asana.clientSecret) {
       return { service: "Asana", status: "error", message: "OAuth client credentials are missing" };
@@ -824,6 +1948,37 @@ export class AsanaSkill implements Skill {
     this.transport = undefined;
   }
 
+  private async getCreatedTaskTimeline(
+    start: Date,
+    end: Date,
+  ): Promise<{ tasks: Record<string, unknown>[]; queryCount: number }> {
+    const startTime = start.getTime();
+    const endTime = end.getTime();
+    const cache = this.createdTaskTimelineCache;
+    if (cache && cache.start <= startTime && cache.end >= endTime) {
+      return {
+        tasks: cache.tasks.filter((task) => {
+          if (typeof task.created_at !== "string") return false;
+          const createdAt = Date.parse(task.created_at);
+          return createdAt >= startTime && createdAt < endTime;
+        }),
+        queryCount: 0,
+      };
+    }
+    const result = await getTasksCreatedByCursor(
+      (arguments_) => this.callAsanaTool("search_tasks", arguments_),
+      start,
+      end,
+      "gid,created_at",
+    );
+    this.createdTaskTimelineCache = {
+      start: startTime,
+      end: endTime,
+      tasks: result.tasks,
+    };
+    return result;
+  }
+
   private async connect(): Promise<Client> {
     if (this.client) return this.client;
     const client = new Client({ name: "ontix-iq", version: "0.1.0" });
@@ -840,13 +1995,23 @@ export class AsanaSkill implements Skill {
     name: string,
     arguments_: Record<string, unknown>,
   ): Promise<unknown> {
-    const generation = this.authGeneration;
-    let result = await (await this.connect()).callTool({ name, arguments: arguments_ });
-    if (!isAsanaAuthError(result)) return result;
-
-    if (generation === this.authGeneration) await this.refreshAuthorization();
-    result = await (await this.connect()).callTool({ name, arguments: arguments_ });
-    return result;
+    let authenticationRetried = false;
+    for (let rateLimitAttempt = 0; rateLimitAttempt <= 2; rateLimitAttempt++) {
+      const generation = this.authGeneration;
+      const result = await (await this.connect()).callTool({ name, arguments: arguments_ });
+      if (isAsanaAuthError(result) && !authenticationRetried) {
+        if (generation === this.authGeneration) await this.refreshAuthorization();
+        authenticationRetried = true;
+        rateLimitAttempt -= 1;
+        continue;
+      }
+      if (isAsanaRateLimitError(result) && rateLimitAttempt < 2) {
+        await delay(asanaRateLimitDelay(result));
+        continue;
+      }
+      return result;
+    }
+    throw new Error("Asana tool retry loop ended unexpectedly");
   }
 
   private async refreshAuthorization(): Promise<void> {
@@ -875,6 +2040,23 @@ function isAsanaAuthError(result: unknown): boolean {
     result.isError === true &&
     /unauthorized|token has expired|re-authorize/i.test(extractMcpText(result))
   );
+}
+
+function isAsanaRateLimitError(result: unknown): boolean {
+  return (
+    isRecord(result) &&
+    result.isError === true &&
+    /rate_limit|too many requests|rate limit/i.test(extractMcpText(result))
+  );
+}
+
+function asanaRateLimitDelay(result: unknown): number {
+  const seconds = Number(extractMcpText(result).match(/wait\s+(\d+)\s+seconds?/i)?.[1] ?? 60);
+  return Math.min(Math.max(seconds, 1), 60) * 1000;
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 function extractTaskPage(
@@ -990,6 +2172,25 @@ function mergeTaskCollections(
   };
 }
 
+function calendarMonthInTimeZone(
+  timestamp: string,
+  timeZone: string,
+): { year: number; month: number } {
+  const date = new Date(timestamp);
+  if (!Number.isFinite(date.getTime())) throw new Error(`Invalid task creation time: ${timestamp}`);
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      year: "numeric",
+      month: "numeric",
+    })
+      .formatToParts(date)
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value]),
+  );
+  return { year: Number(parts.year), month: Number(parts.month) };
+}
+
 function taskProjects(task: Record<string, unknown>): Array<{ gid: string; name: string }> {
   const direct = projectRecords(task.projects);
   if (direct.length > 0) return direct;
@@ -1067,11 +2268,8 @@ function extractTaskSearchRows(result: unknown): unknown[] {
 }
 
 function startOfDateInTimeZone(date: string, timeZone: string): Date {
-  const match = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match?.[1] || !match[2] || !match[3]) {
-    throw new Error(`Invalid calendar date: ${date}`);
-  }
-  const target = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  const parsed = parseCalendarDate(date);
+  const target = Date.UTC(parsed.year, parsed.month - 1, parsed.day);
   const formatter = new Intl.DateTimeFormat("en-US", {
     timeZone,
     year: "numeric",
@@ -1101,6 +2299,25 @@ function startOfDateInTimeZone(date: string, timeZone: string): Date {
     candidate = target - (represented - candidate);
   }
   return new Date(candidate);
+}
+
+function parseCalendarDate(date: string): { year: number; month: number; day: number } {
+  const match = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match?.[1] || !match[2] || !match[3]) {
+    throw new Error(`Invalid calendar date: ${date}`);
+  }
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const normalized = new Date(Date.UTC(year, month - 1, day));
+  if (
+    normalized.getUTCFullYear() !== year ||
+    normalized.getUTCMonth() !== month - 1 ||
+    normalized.getUTCDate() !== day
+  ) {
+    throw new Error(`Invalid calendar date: ${date}`);
+  }
+  return { year, month, day };
 }
 
 function extractMcpText(result: unknown): string {

@@ -7,6 +7,8 @@ Reads projects, tasks, milestones, project managers, client work, and resource a
 OAuth 2.0 Authorization Code with PKCE. The app must be configured as an MCP app and distributed to the customer's workspace. Run `npm run auth:asana` once before use.
 Expired access tokens are refreshed once and the failed read is retried, including when
 expiration is reported inside an MCP tool result during a long paginated analysis.
+Rate-limited reads honor Asana's requested delay and resume the active cursor. Historical
+task timelines are cached in memory so related analyses in one session can reuse them.
 
 ## Safety
 
@@ -31,3 +33,24 @@ Client-volume questions use `asana__analyze_client_task_counts`. It retrieves ev
 created in the calendar year, attributes subtasks through their parent projects, groups
 multiple recognizable projects for the same client, and reports internal, shared-project,
 and projectless tasks separately from the client ranking.
+
+Topic-percentage questions use `asana__analyze_task_mentions`. It exhaustively searches
+each supplied full-text term within the calendar year, unions matching task GIDs across
+synonyms, and divides by the exhaustive created-task total. The result measures mentions
+in Asana task names, descriptions, and comments; it is not a semantic work classification.
+
+Created-task period comparisons use `asana__compare_created_task_periods`. Inclusive
+business dates are converted to exact timestamps in the organization's time zone, each
+period is counted exhaustively, and absolute and percentage changes are returned.
+
+Monthly-average questions use `asana__analyze_monthly_task_averages`. It counts calendar
+months through an efficient creation-time cursor scan, supports partial years, and returns
+exact yearly and combined completed-year baselines without repeated full-year searches.
+
+Future busiest-quarter questions use `asana__forecast_busiest_quarter`. It calculates exact
+historical quarter counts, normalizes each quarter by its year's total, and reports the
+seasonal winner with confidence and conflicting historical signals.
+
+Service-growth questions use `asana__forecast_service_growth`. Organization-approved
+keywords are unioned per service, mixed matches are reported, and full and partial years
+are compared using monthly task rates before a forecast winner is selected.

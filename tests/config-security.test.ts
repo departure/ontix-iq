@@ -9,6 +9,7 @@ describe("configuration", () => {
     expect(config.asana.callbackUrl.toString()).toBe(
       "http://127.0.0.1:3334/oauth/callback",
     );
+    expect(config.runtime.toolTimeoutMs).toBe(180000);
     expect(missingRequiredServices(config)).toEqual([
       "OPENAI_API_KEY",
       "ASANA_CLIENT_ID",
