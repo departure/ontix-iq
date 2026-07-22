@@ -1,7 +1,12 @@
 node_modules
+dist
+.data
+.coverage
+coverage
 .nuxt
 .output
 .env
+.env.local
 .DS_Store
 .nova
 certs/

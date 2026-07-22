@@ -1,0 +1,9 @@
+{
+  "name": "aws",
+  "version": "0.1.0",
+  "description": "Read AWS cost, commitment, and infrastructure evidence",
+  "transport": "aws-sdk-v3",
+  "permissions": ["read"],
+  "approvalRequired": false,
+  "entrypoint": "./index.ts"
+}

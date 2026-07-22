@@ -1,0 +1,9 @@
+{
+  "name": "asana",
+  "version": "0.1.0",
+  "description": "Read project-management evidence through Asana MCP V2",
+  "transport": "mcp-streamable-http",
+  "permissions": ["read"],
+  "approvalRequired": false,
+  "entrypoint": "./index.ts"
+}

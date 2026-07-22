@@ -1,0 +1,9 @@
+{
+  "name": "notion",
+  "version": "0.1.0",
+  "description": "Read internal knowledge and structured data from Notion",
+  "transport": "notion-api",
+  "permissions": ["read"],
+  "approvalRequired": false,
+  "entrypoint": "./index.ts"
+}

@@ -1,0 +1,11 @@
+services:
+  ontix-iq:
+    build: .
+    env_file: .env
+    stdin_open: true
+    tty: true
+    volumes:
+      - ontix-data:/app/.data
+
+volumes:
+  ontix-data:
