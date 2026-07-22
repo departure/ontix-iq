@@ -16,6 +16,7 @@ const mutatingName =
 
 const compareTaskCountsTool = "asana__compare_task_counts";
 const compareCreatedTaskCountsTool = "asana__compare_created_task_counts";
+const analyzeClientTaskCountsTool = "asana__analyze_client_task_counts";
 const taskSearchLimit = 100;
 const taskCountFilterNames = [
   "completed",
@@ -121,6 +122,174 @@ export async function countTasksByCreatedAt(
   };
 
   return countWindow(start, end, filters);
+}
+
+export async function getTasksCreatedBetween(
+  search: TaskSearchCall,
+  filters: Record<string, unknown>,
+  start: Date,
+  end: Date,
+  optFields: string,
+): Promise<{ tasks: Record<string, unknown>[]; queryCount: number }> {
+  if (
+    !Number.isFinite(start.getTime()) ||
+    !Number.isFinite(end.getTime()) ||
+    start.getTime() >= end.getTime()
+  ) {
+    throw new Error("Created-task retrieval requires a valid non-empty time range");
+  }
+
+  const collectWindow = async (
+    windowStart: Date,
+    windowEnd: Date,
+    windowFilters: Record<string, unknown>,
+  ): Promise<{ tasks: Record<string, unknown>[]; queryCount: number }> => {
+    const result = await search({
+      ...windowFilters,
+      created_at_after: new Date(windowStart.getTime() - 1).toISOString(),
+      created_at_before: windowEnd.toISOString(),
+      sort_by: "created_at",
+      sort_ascending: true,
+      limit: taskSearchLimit,
+      opt_fields: optFields,
+    });
+    const tasks = extractTaskSearchRows(result).map((task) => {
+      if (!isRecord(task) || typeof task.gid !== "string") {
+        throw new Error("Asana created-task search returned a task without a GID");
+      }
+      return task;
+    });
+    if (tasks.length < taskSearchLimit) return { tasks, queryCount: 1 };
+
+    const duration = windowEnd.getTime() - windowStart.getTime();
+    if (duration > 1) {
+      const midpoint = new Date(windowStart.getTime() + Math.floor(duration / 2));
+      const [left, right] = await Promise.all([
+        collectWindow(windowStart, midpoint, windowFilters),
+        collectWindow(midpoint, windowEnd, windowFilters),
+      ]);
+      return mergeTaskCollections([left, right]);
+    }
+
+    for (const field of ["completed", "is_subtask"] as const) {
+      if (windowFilters[field] === undefined) {
+        const partitions = await Promise.all([
+          collectWindow(windowStart, windowEnd, { ...windowFilters, [field]: false }),
+          collectWindow(windowStart, windowEnd, { ...windowFilters, [field]: true }),
+        ]);
+        return mergeTaskCollections(partitions);
+      }
+    }
+
+    if (windowFilters.resource_subtype === undefined) {
+      const partitions = await Promise.all(
+        ["default_task", "milestone", "approval"].map((resource_subtype) =>
+          collectWindow(windowStart, windowEnd, { ...windowFilters, resource_subtype }),
+        ),
+      );
+      return mergeTaskCollections(partitions);
+    }
+
+    throw new Error("More than 100 tasks share the same creation millisecond and task type");
+  };
+
+  return collectWindow(start, end, filters);
+}
+
+export type ClientTaskAnalysis = {
+  clients: Array<{
+    client: string;
+    count: number;
+    projects: Array<{ gid: string; name: string; count: number }>;
+  }>;
+  attributedTaskCount: number;
+  internalTaskCount: number;
+  unclassifiedTaskCount: number;
+  unattributedTaskCount: number;
+  crossClientTaskCount: number;
+};
+
+export function analyzeClientTasks(tasks: Record<string, unknown>[]): ClientTaskAnalysis {
+  const projectNames = new Map<string, string>();
+  for (const task of tasks) {
+    for (const project of taskProjects(task)) projectNames.set(project.gid, project.name);
+  }
+  const projectClients = new Map<string, { key: string; label: string; classification: string }>();
+  for (const [gid, name] of projectNames) {
+    projectClients.set(gid, classifyProjectClient(name, [...projectNames.values()]));
+  }
+
+  const clientTasks = new Map<string, Set<string>>();
+  const clientLabels = new Map<string, string>();
+  const clientProjects = new Map<string, Map<string, { name: string; tasks: Set<string> }>>();
+  const internalTasks = new Set<string>();
+  const unclassifiedTasks = new Set<string>();
+  const unattributedTasks = new Set<string>();
+  let crossClientTaskCount = 0;
+
+  for (const task of tasks) {
+    if (typeof task.gid !== "string") continue;
+    const projects = taskProjects(task);
+    if (projects.length === 0) {
+      unattributedTasks.add(task.gid);
+      continue;
+    }
+    const taskClientKeys = new Set<string>();
+    let hasInternalProject = false;
+    let hasUnclassifiedProject = false;
+    for (const project of projects) {
+      const client = projectClients.get(project.gid);
+      if (!client) continue;
+      if (client.classification === "internal") {
+        hasInternalProject = true;
+        continue;
+      }
+      if (client.classification === "unclassified") {
+        hasUnclassifiedProject = true;
+        continue;
+      }
+      taskClientKeys.add(client.key);
+      clientLabels.set(client.key, client.label);
+      const projectMap = clientProjects.get(client.key) ?? new Map();
+      const projectEntry = projectMap.get(project.gid) ?? {
+        name: project.name,
+        tasks: new Set<string>(),
+      };
+      projectEntry.tasks.add(task.gid);
+      projectMap.set(project.gid, projectEntry);
+      clientProjects.set(client.key, projectMap);
+    }
+    if (taskClientKeys.size > 0) {
+      if (taskClientKeys.size > 1) crossClientTaskCount += 1;
+      for (const key of taskClientKeys) {
+        const gids = clientTasks.get(key) ?? new Set<string>();
+        gids.add(task.gid);
+        clientTasks.set(key, gids);
+      }
+    } else if (hasUnclassifiedProject) {
+      unclassifiedTasks.add(task.gid);
+    } else if (hasInternalProject) {
+      internalTasks.add(task.gid);
+    }
+  }
+
+  const clients = [...clientTasks.entries()]
+    .map(([key, gids]) => ({
+      client: clientLabels.get(key) ?? key,
+      count: gids.size,
+      projects: [...(clientProjects.get(key)?.entries() ?? [])]
+        .map(([gid, project]) => ({ gid, name: project.name, count: project.tasks.size }))
+        .sort((left, right) => right.count - left.count || left.name.localeCompare(right.name)),
+    }))
+    .sort((left, right) => right.count - left.count || left.client.localeCompare(right.client));
+  return {
+    clients,
+    attributedTaskCount: new Set([...clientTasks.values()].flatMap((gids) => [...gids])).size,
+    internalTaskCount: internalTasks.size,
+    unclassifiedTaskCount: unclassifiedTasks.size,
+    unattributedTaskCount: unattributedTasks.size,
+    crossClientTaskCount,
+  };
 }
 
 export function yearBoundsInTimeZone(
@@ -364,6 +533,31 @@ export class AsanaSkill implements Skill {
           additionalProperties: false,
         },
       });
+      tools.push({
+        name: analyzeClientTaskCountsTool,
+        skill: this.name,
+        description:
+          "Exhaustive year-to-date client ranking by tasks created. ALWAYS use this when the user asks which client or customer has the most tasks, is the biggest by task volume, or requests created-task counts by client. It partitions search_tasks by exact creation timestamps, attributes subtasks through parent project membership, groups multiple projects for the same client, excludes recognizable internal projects, and returns exact compact rankings plus attribution coverage. Do not infer a winner from capped search_tasks samples.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            year: {
+              type: "integer",
+              minimum: 2000,
+              maximum: 2100,
+              description: "Calendar year in which the tasks were created.",
+            },
+            time_zone: {
+              type: "string",
+              default: "America/Los_Angeles",
+              description:
+                "IANA time zone defining the calendar-year boundaries. Use the organization's primary time zone.",
+            },
+          },
+          required: ["year"],
+          additionalProperties: false,
+        },
+      });
     }
     this.cachedTools = tools;
     return tools;
@@ -386,6 +580,9 @@ export class AsanaSkill implements Skill {
     }
     if (toolName === compareCreatedTaskCountsTool) {
       return [await this.compareCreatedTaskCounts(input)];
+    }
+    if (toolName === analyzeClientTaskCountsTool) {
+      return [await this.analyzeClientTaskCounts(input)];
     }
     const result = await this.callAsanaTool(remoteName, isRecord(input) ? input : {});
     const text = extractMcpText(result);
@@ -538,6 +735,61 @@ export class AsanaSkill implements Skill {
         },
         exact: true,
         method: "partitioned_search_tasks_by_created_at",
+      },
+      query: input,
+    };
+  }
+
+  private async analyzeClientTaskCounts(input: unknown): Promise<Evidence> {
+    if (!isRecord(input) || typeof input.year !== "number") {
+      throw new Error("Client task analysis requires a calendar year");
+    }
+    const timeZone =
+      typeof input.time_zone === "string" && input.time_zone.trim()
+        ? input.time_zone.trim()
+        : "America/Los_Angeles";
+    const bounds = yearBoundsInTimeZone(input.year, timeZone);
+    const result = await getTasksCreatedBetween(
+      (arguments_) => this.callAsanaTool("search_tasks", arguments_),
+      {},
+      bounds.start,
+      bounds.end,
+      "gid,name,created_at,parent.gid,parent.name,parent.projects.gid,parent.projects.name,projects.gid,projects.name",
+    );
+    const analysis = analyzeClientTasks(result.tasks);
+    const winner = analysis.clients[0];
+    const ranking = analysis.clients
+      .slice(0, 10)
+      .map((client) => `${client.client}: ${client.count}`)
+      .join("; ");
+    const conclusion = winner
+      ? `${winner.client} has the highest directly attributable client task count.`
+      : "No client-attributable tasks were found.";
+    const coverage =
+      `${result.tasks.length} unique tasks analyzed; ` +
+      `${analysis.unattributedTaskCount} had no project, ` +
+      `${analysis.unclassifiedTaskCount} were in unclassified shared projects, and ` +
+      `${analysis.internalTaskCount} were internal.`;
+    return {
+      id: `ASN-${randomUUID().slice(0, 8)}`,
+      source: this.name,
+      title: `Asana ${input.year} client task ranking`,
+      locator: "https://app.asana.com/",
+      retrievedAt: new Date().toISOString(),
+      summary: redact(`${ranking}. ${conclusion} ${coverage}`),
+      data: {
+        ...analysis,
+        totalTaskCount: result.tasks.length,
+        queryCount: result.queryCount,
+        winner: winner?.client,
+        year: input.year,
+        timeZone,
+        range: {
+          start: bounds.start.toISOString(),
+          endExclusive: bounds.end.toISOString(),
+        },
+        exact: true,
+        method: "partitioned_created_at_with_project_and_parent_attribution",
       },
       query: input,
     };
@@ -721,6 +973,79 @@ function assignedTaskOptFields(filters: Record<string, unknown>): string {
     fields.add("memberships.project.gid");
   }
   return [...fields].join(",");
+}
+
+function mergeTaskCollections(
+  collections: Array<{ tasks: Record<string, unknown>[]; queryCount: number }>,
+): { tasks: Record<string, unknown>[]; queryCount: number } {
+  const tasks = new Map<string, Record<string, unknown>>();
+  for (const collection of collections) {
+    for (const task of collection.tasks) {
+      if (typeof task.gid === "string") tasks.set(task.gid, task);
+    }
+  }
+  return {
+    tasks: [...tasks.values()],
+    queryCount: 1 + collections.reduce((sum, collection) => sum + collection.queryCount, 0),
+  };
+}
+
+function taskProjects(task: Record<string, unknown>): Array<{ gid: string; name: string }> {
+  const direct = projectRecords(task.projects);
+  if (direct.length > 0) return direct;
+  return isRecord(task.parent) ? projectRecords(task.parent.projects) : [];
+}
+
+function projectRecords(value: unknown): Array<{ gid: string; name: string }> {
+  if (!Array.isArray(value)) return [];
+  const projects = new Map<string, { gid: string; name: string }>();
+  for (const project of value) {
+    if (
+      isRecord(project) &&
+      typeof project.gid === "string" &&
+      typeof project.name === "string"
+    ) {
+      projects.set(project.gid, { gid: project.gid, name: project.name.trim() });
+    }
+  }
+  return [...projects.values()];
+}
+
+function classifyProjectClient(
+  projectName: string,
+  allProjectNames: string[],
+): { key: string; label: string; classification: "client" | "internal" | "unclassified" } {
+  const name = projectName.trim();
+  if (/^(?:ontix|pm templates|resources\s*:)/i.test(name)) {
+    return { key: `internal:${name.toLowerCase()}`, label: name, classification: "internal" };
+  }
+  if (/^RP$/i.test(name)) {
+    return { key: "unclassified:rp", label: "RP", classification: "unclassified" };
+  }
+
+  const code = name.match(/^([A-Za-z]{2,8})-\d{2,3}(?:-\d{2,3})?\b/)?.[1]?.toUpperCase();
+  if (code) {
+    const exact = allProjectNames.find(
+      (candidate) => candidate.trim().toUpperCase() === code,
+    );
+    const expanded = allProjectNames.find((candidate) => {
+      const firstWord = candidate.trim().split(/\s+/)[0] ?? "";
+      return (
+        !candidate.match(/^([A-Za-z]{2,8})-\d/) &&
+        firstWord.length > code.length &&
+        firstWord.toUpperCase().startsWith(code)
+      );
+    });
+    const label = exact?.trim() || expanded?.trim() || code;
+    return { key: label.toLowerCase(), label, classification: "client" };
+  }
+
+  const label = name
+    .replace(/\s+\(internal\)\s*$/i, "")
+    .replace(/\s+(?:Pharmacy Solutions\s+)?Website\b.*$/i, "")
+    .replace(/\s+Support\b.*$/i, "")
+    .trim();
+  return { key: label.toLowerCase(), label, classification: "client" };
 }
 
 function extractTaskSearchRows(result: unknown): unknown[] {

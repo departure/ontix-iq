@@ -2,8 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import { SkillRegistry } from "../src/core/skills.js";
 import { readConfig } from "../src/config.js";
 import {
+  analyzeClientTasks,
   countTasksByCreatedAt,
   getAllAssignedTasks,
+  getTasksCreatedBetween,
   isReadOnlyAsanaTool,
   parseTaskSearchCount,
   taskMatchesCountFilters,
@@ -269,5 +271,80 @@ describe("Asana capability policy", () => {
         refresh_token: "existing-refresh",
       }),
     );
+  });
+
+  it("collects every created task across capped timestamp partitions", async () => {
+    const start = new Date("2026-01-01T00:00:00.000Z");
+    const end = new Date("2026-01-01T00:00:01.000Z");
+    const rows = Array.from({ length: 225 }, (_, index) => ({
+      gid: String(index),
+      created_at: new Date(start.getTime() + index * 4).toISOString(),
+    }));
+    const result = await getTasksCreatedBetween(
+      async (arguments_) => {
+        const after = Date.parse(String(arguments_.created_at_after));
+        const before = Date.parse(String(arguments_.created_at_before));
+        return {
+          structuredContent: {
+            data: rows
+              .filter((row) => {
+                const timestamp = Date.parse(row.created_at);
+                return timestamp > after && timestamp < before;
+              })
+              .slice(0, 100),
+          },
+        };
+      },
+      {},
+      start,
+      end,
+      "gid,created_at",
+    );
+    expect(result.tasks).toHaveLength(225);
+    expect(result.queryCount).toBeGreaterThan(1);
+  });
+
+  it("attributes subtasks through parents and groups client projects without double counting", () => {
+    const project = (gid: string, name: string) => ({ gid, name });
+    const analysis = analyzeClientTasks([
+      { gid: "1", projects: [project("disd-build", "DISD-25-002 Website Build")] },
+      { gid: "2", projects: [project("disd", "DISD")] },
+      {
+        gid: "3",
+        projects: [],
+        parent: { projects: [project("xifin-web", "XiFin Website")] },
+      },
+      { gid: "4", projects: [project("xifin-pharmacy", "XiFin Pharmacy Solutions Website")] },
+      {
+        gid: "5",
+        projects: [
+          project("xifin-web", "XiFin Website"),
+          project("xifin-pharmacy", "XiFin Pharmacy Solutions Website"),
+        ],
+      },
+      {
+        gid: "6",
+        projects: [project("disd", "DISD"), project("xifin-web", "XiFin Website")],
+      },
+      { gid: "7", projects: [project("ontix", "ontix")] },
+      { gid: "8", projects: [project("rp", "RP")] },
+      { gid: "9", projects: [] },
+      { gid: "10", projects: [project("anders", "Anders")] },
+      { gid: "11", projects: [project("anders-build", "AND-24-014 Anders Website")] },
+      {
+        gid: "12",
+        projects: [project("xifin-web", "XiFin Website"), project("ontix", "ontix")],
+      },
+    ]);
+    expect(analysis.clients.slice(0, 3).map(({ client, count }) => [client, count])).toEqual([
+      ["XiFin", 5],
+      ["DISD", 3],
+      ["Anders", 2],
+    ]);
+    expect(analysis.attributedTaskCount).toBe(9);
+    expect(analysis.crossClientTaskCount).toBe(1);
+    expect(analysis.internalTaskCount).toBe(1);
+    expect(analysis.unclassifiedTaskCount).toBe(1);
+    expect(analysis.unattributedTaskCount).toBe(1);
   });
 });

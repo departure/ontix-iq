@@ -26,3 +26,8 @@ limited to 100 results and cannot be paginated conventionally, so this tool recu
 partitions the calendar year by `created_at` timestamp until every result set is below the
 limit. Calendar boundaries use the organization's IANA time zone, and the final evidence
 contains exact totals rather than raw task lists.
+
+Client-volume questions use `asana__analyze_client_task_counts`. It retrieves every task
+created in the calendar year, attributes subtasks through their parent projects, groups
+multiple recognizable projects for the same client, and reports internal, shared-project,
+and projectless tasks separately from the client ranking.
