@@ -1,81 +1,94 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { OAuthTokens } from "@modelcontextprotocol/sdk/shared/auth.js";
-
-type EncryptedPayload = {
-  version: 1;
-  iv: string;
-  tag: string;
-  ciphertext: string;
-};
+import {
+  decryptJson,
+  encryptJson,
+  LocalEncryptionKey,
+  type EncryptedPayload,
+} from "../../../src/storage/encryption.js";
 
 export class EncryptedTokenStore {
   private readonly tokenPath: string;
-  private readonly keyPath: string;
+  private readonly encryptionKey: LocalEncryptionKey;
 
   constructor(
     dataDir: string,
-    private readonly configuredKey?: string,
+    configuredKey?: string,
   ) {
     this.tokenPath = join(dataDir, "secrets", "asana-tokens.json");
-    this.keyPath = join(dataDir, "secrets", "local-token.key");
+    this.encryptionKey = new LocalEncryptionKey(dataDir, configuredKey);
   }
 
   async read(): Promise<OAuthTokens | undefined> {
+    const stored = await this.readStored();
+    return stored ? tokensFromStored(stored) : undefined;
+  }
+
+  async credentialFingerprint(): Promise<string> {
+    const stored = await this.readStored();
+    if (!stored) return "unauthorized";
+    if (isTokenEnvelope(stored)) return stored.credentialFingerprint;
+    const credentialFingerprint = randomUUID();
+    await this.writeEnvelope(stored, credentialFingerprint);
+    return credentialFingerprint;
+  }
+
+  async write(tokens: OAuthTokens, preserveCredential = false): Promise<void> {
+    const current = preserveCredential ? await this.readStored() : undefined;
+    const credentialFingerprint =
+      current && isTokenEnvelope(current) ? current.credentialFingerprint : randomUUID();
+    await this.writeEnvelope(tokens, credentialFingerprint);
+  }
+
+  async clear(): Promise<void> {
+    await rm(this.tokenPath, { force: true });
+  }
+
+  private async readStored(): Promise<OAuthTokens | TokenEnvelope | undefined> {
     try {
       const payload = JSON.parse(await readFile(this.tokenPath, "utf8")) as EncryptedPayload;
-      const key = await this.key(false);
+      const key = await this.encryptionKey.get(false);
       if (!key) return undefined;
-      const decipher = createDecipheriv(
-        "aes-256-gcm",
-        key,
-        Buffer.from(payload.iv, "base64"),
-      );
-      decipher.setAuthTag(Buffer.from(payload.tag, "base64"));
-      const cleartext = Buffer.concat([
-        decipher.update(Buffer.from(payload.ciphertext, "base64")),
-        decipher.final(),
-      ]);
-      return JSON.parse(cleartext.toString("utf8")) as OAuthTokens;
+      return decryptJson(payload, key) as OAuthTokens | TokenEnvelope;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
       throw new Error("Unable to decrypt stored Asana authorization", { cause: error });
     }
   }
 
-  async write(tokens: OAuthTokens): Promise<void> {
-    const key = await this.key(true);
+  private async writeEnvelope(
+    tokens: OAuthTokens,
+    credentialFingerprint: string,
+  ): Promise<void> {
+    const key = await this.encryptionKey.get(true);
     if (!key) throw new Error("Unable to create token encryption key");
-    const iv = randomBytes(12);
-    const cipher = createCipheriv("aes-256-gcm", key, iv);
-    const ciphertext = Buffer.concat([
-      cipher.update(JSON.stringify(tokens), "utf8"),
-      cipher.final(),
-    ]);
-    const payload: EncryptedPayload = {
-      version: 1,
-      iv: iv.toString("base64"),
-      tag: cipher.getAuthTag().toString("base64"),
-      ciphertext: ciphertext.toString("base64"),
-    };
+    const payload = encryptJson(
+      { version: 1, credentialFingerprint, tokens } satisfies TokenEnvelope,
+      key,
+    );
     await mkdir(dirname(this.tokenPath), { recursive: true, mode: 0o700 });
     await writeFile(this.tokenPath, `${JSON.stringify(payload)}\n`, { mode: 0o600 });
   }
+}
 
-  private async key(create: boolean): Promise<Buffer | undefined> {
-    if (this.configuredKey) {
-      return createHash("sha256").update(this.configuredKey).digest();
-    }
-    try {
-      return Buffer.from(await readFile(this.keyPath, "utf8"), "base64");
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      if (!create) return undefined;
-      const key = randomBytes(32);
-      await mkdir(dirname(this.keyPath), { recursive: true, mode: 0o700 });
-      await writeFile(this.keyPath, key.toString("base64"), { mode: 0o600 });
-      return key;
-    }
-  }
+type TokenEnvelope = {
+  version: 1;
+  credentialFingerprint: string;
+  tokens: OAuthTokens;
+};
+
+function isTokenEnvelope(value: OAuthTokens | TokenEnvelope): value is TokenEnvelope {
+  return (
+    "version" in value &&
+    value.version === 1 &&
+    "credentialFingerprint" in value &&
+    typeof value.credentialFingerprint === "string" &&
+    "tokens" in value
+  );
+}
+
+function tokensFromStored(value: OAuthTokens | TokenEnvelope): OAuthTokens {
+  return isTokenEnvelope(value) ? value.tokens : value;
 }

@@ -108,7 +108,7 @@ Never invent tool names or facts. Do not repeat a successful call unless its arg
 Treat provider result limits as a signal to use an available analytical or aggregate tool, not as a reason to stop. Prefer dedicated count/comparison tools over retrieving or manually counting raw records. Never manually split Asana creator searches by month when asana__compare_created_task_counts is available. For client rankings based on created tasks, use asana__analyze_client_task_counts rather than inferring a client from capped search samples. For percentages of tasks mentioning a topic, use asana__analyze_task_mentions and provide relevant organization-approved synonyms. For comparisons of tasks created across date ranges, use asana__compare_created_task_periods. For average tasks per month across full or partial years, use asana__analyze_monthly_task_averages. For forecasts of the busiest future quarter, use asana__forecast_busiest_quarter and distinguish exact historical counts from the forecast. For service growth comparisons based on task volume, use asana__forecast_service_growth with organization-approved service terms and comparable monthly rates.
 Respond with JSON only:
 {"kind":"clarify|research|answer_ready","question":"only for clarify","rationale":"brief","calls":[{"name":"exact tool name","arguments":{}}]}
-If evidence is sufficient, use answer_ready. If a provider failed, use other evidence when possible.`;
+If evidence is sufficient, use answer_ready. If a provider failed, use other evidence when possible. A failed analytical execution is not evidence that the source contains zero records: retry through a materially different relevant route when one exists, and never describe an execution failure as an empty dataset.`;
 }
 
 function answerInstructions(): string {
@@ -119,6 +119,7 @@ Every factual claim from retrieved systems must cite one or more exact evidence 
 Separate facts from recommendations. Distinguish historical results from forecasts and explain forecast confidence.
 State important data gaps or partial provider failures plainly.
 Lead with the strongest defensible answer. Do not make "I can't determine" the answer when available analytical tools, bounded partitioning, lower bounds, or other evidence can support a useful conclusion. Never turn this instruction into a fabricated conclusion.
+Never claim that a source contains no records merely because a tool execution failed or returned no evidence; distinguish retrieval failure from a verified zero count.
 Finish with a short "Sources" line listing the evidence IDs and titles actually used.`;
 }
 

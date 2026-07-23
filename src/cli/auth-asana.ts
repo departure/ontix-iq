@@ -41,7 +41,7 @@ async function handleCallback(requestUrl: string): Promise<void> {
 server.listen(Number(callback.port), callback.hostname, async () => {
   process.stdout.write(`Waiting for Asana at ${callback.toString()}\n`);
   try {
-    const result = await auth(provider, { serverUrl: config.asana.serverUrl });
+    const result = await authorizeWithExpiredTokenRecovery();
     if (result === "AUTHORIZED") {
       process.stdout.write("Asana is already authorized.\n");
       server.close();
@@ -51,3 +51,22 @@ server.listen(Number(callback.port), callback.hostname, async () => {
     throw error;
   }
 });
+
+async function authorizeWithExpiredTokenRecovery() {
+  try {
+    return await auth(provider, { serverUrl: config.asana.serverUrl });
+  } catch (error) {
+    if (!isInvalidGrant(error)) throw error;
+    process.stdout.write("Stored Asana authorization expired; reconnecting.\n");
+    await provider.invalidateCredentials("tokens");
+    return auth(provider, { serverUrl: config.asana.serverUrl });
+  }
+}
+
+function isInvalidGrant(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return (
+    error.name === "InvalidGrantError" ||
+    /\binvalid[_ ]grant\b|\brefresh_token\b.*\binvalid\b/i.test(error.message)
+  );
+}

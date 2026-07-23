@@ -13,6 +13,8 @@ import { EncryptedTokenStore } from "./token-store.js";
 
 export class AsanaOAuthProvider implements OAuthClientProvider {
   private verifier = "";
+  private preserveCredentialOnSave = false;
+  private authorizationInProgress = false;
   private readonly expectedState = randomBytes(24).toString("base64url");
   readonly tokenStore: EncryptedTokenStore;
 
@@ -62,8 +64,16 @@ export class AsanaOAuthProvider implements OAuthClientProvider {
     return this.tokenStore.read();
   }
 
-  saveTokens(tokens: OAuthTokens): Promise<void> {
-    return this.tokenStore.write(tokens);
+  async saveTokens(tokens: OAuthTokens): Promise<void> {
+    const preserveCredential =
+      this.preserveCredentialOnSave ||
+      (!this.authorizationInProgress && Boolean(await this.tokenStore.read()));
+    await this.tokenStore.write(tokens, preserveCredential);
+    this.authorizationInProgress = false;
+  }
+
+  credentialFingerprint(): Promise<string> {
+    return this.tokenStore.credentialFingerprint();
   }
 
   async refreshTokens(): Promise<void> {
@@ -90,13 +100,19 @@ export class AsanaOAuthProvider implements OAuthClientProvider {
     }
     const refreshed = (await response.json()) as OAuthTokens;
     if (!refreshed.access_token) throw new Error("Asana token refresh returned no access token");
-    await this.saveTokens({
-      ...refreshed,
-      refresh_token: refreshed.refresh_token ?? current.refresh_token,
-    });
+    this.preserveCredentialOnSave = true;
+    try {
+      await this.saveTokens({
+        ...refreshed,
+        refresh_token: refreshed.refresh_token ?? current.refresh_token,
+      });
+    } finally {
+      this.preserveCredentialOnSave = false;
+    }
   }
 
   redirectToAuthorization(url: URL): void {
+    this.authorizationInProgress = true;
     process.stdout.write(`Authorize Asana in your browser:\n${url.toString()}\n`);
     const command =
       process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
@@ -116,5 +132,10 @@ export class AsanaOAuthProvider implements OAuthClientProvider {
 
   async invalidateCredentials(scope: "all" | "client" | "tokens" | "verifier" | "discovery") {
     if (scope === "verifier" || scope === "all") this.verifier = "";
+    if (scope === "tokens" || scope === "all") {
+      this.preserveCredentialOnSave = false;
+      this.authorizationInProgress = false;
+      await this.tokenStore.clear();
+    }
   }
 }
