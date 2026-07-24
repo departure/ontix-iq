@@ -4,7 +4,9 @@ import {
   createCliRenderer,
   InputRenderable,
   InputRenderableEvents,
+  MarkdownRenderable,
   ScrollBoxRenderable,
+  SyntaxStyle,
   TextRenderable,
 } from "@opentui/core";
 import type { Application } from "../app.js";
@@ -16,6 +18,10 @@ export async function runChat(app: Application): Promise<void> {
     exitOnCtrlC: true,
     targetFps: 30,
     useMouse: true,
+  });
+  const markdownStyle = SyntaxStyle.fromStyles({
+    "markup.bold": { bold: true },
+    "markup.strong": { bold: true },
   });
   let context: TenantContext = {
     organizationId: app.config.runtime.organizationId,
@@ -112,7 +118,7 @@ export async function runChat(app: Application): Promise<void> {
         status.content = `${capitalize(progress.stage)} · ${progress.message}`;
       });
       lastAnswer = answer;
-      addMessage("Ontix IQ", answer.text, "#bae6fd");
+      addMessage("Ontix IQ", answer.text, "#bae6fd", true);
       status.content = sourceStatus(answer);
     } catch (error) {
       addMessage(
@@ -180,14 +186,23 @@ export async function runChat(app: Application): Promise<void> {
     input.focus();
   }
 
-  function addMessage(author: string, body: string, color: string): void {
+  function addMessage(author: string, body: string, color: string, markdown = false): void {
     transcript.add(
-      new TextRenderable(renderer, {
-        content: `${author}\n${body}\n`,
-        fg: color,
-        width: "100%",
-        marginBottom: 1,
-      }),
+      markdown
+        ? new MarkdownRenderable(renderer, {
+            content: `${author}\n${body}\n`,
+            syntaxStyle: markdownStyle,
+            conceal: true,
+            fg: color,
+            width: "100%",
+            marginBottom: 1,
+          })
+        : new TextRenderable(renderer, {
+            content: `${author}\n${body}\n`,
+            fg: color,
+            width: "100%",
+            marginBottom: 1,
+          }),
     );
     transcript.scrollTo({ y: transcript.scrollHeight, x: 0 });
   }
