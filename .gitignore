@@ -10,5 +10,7 @@ coverage
 .DS_Store
 .nova
 certs/
+auth/
+
 server/cache/
 __pycache__/

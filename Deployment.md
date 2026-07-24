@@ -1,5 +1,25 @@
 # Deployment
 
+## Double-click launch on macOS
+
+`Launch Ontix IQ.command` is a Finder-friendly launcher for non-technical users.
+Double-clicking it opens Terminal, checks or installs Homebrew, Git, Node.js,
+npm, and project packages, performs first-run setup, and starts the app.
+
+Before handing off a copy:
+
+1. Keep the launcher beside `package.json`.
+2. Supply a configured `.env` using dedicated, least-privileged demo
+   credentials. Never distribute personal or production credentials.
+3. Either include `.data` if the recipient is authorized to use the existing
+   Asana session, or omit `.data` so the launcher opens the recipient's browser
+   for one-time Asana authorization.
+4. Preserve the launcher's executable permission when copying or archiving it.
+
+If macOS warns about an unverified downloaded file, right-click the launcher
+once and choose **Open**. The launcher is a readable shell script, not a signed
+macOS application.
+
 ## Run in the terminal
 
 Requirements: macOS/Linux, Node.js 26.4 or newer, npm, and an interactive terminal.
