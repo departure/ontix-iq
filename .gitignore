@@ -11,6 +11,7 @@ coverage
 .nova
 certs/
 auth/
+grind-results/
 
 server/cache/
 __pycache__/
