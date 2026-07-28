@@ -1,0 +1,352 @@
+[
+  {
+    "id": 1,
+    "seed": "Who is our biggest customer by revenue?",
+    "relatedness": "exact",
+    "missing_source": "financial / billing",
+    "question": "Who is our biggest customer by revenue in 2026 year to date?"
+  },
+  {
+    "id": 2,
+    "seed": "Who is our biggest customer by revenue?",
+    "relatedness": "closely related",
+    "missing_source": "financial / billing",
+    "question": "Rank our top 10 clients by dollars billed in 2026."
+  },
+  {
+    "id": 3,
+    "seed": "How profitable are our website projects?",
+    "relatedness": "exact",
+    "missing_source": "financial / project accounting",
+    "question": "How profitable are our website projects in 2026?"
+  },
+  {
+    "id": 4,
+    "seed": "How profitable are our website projects?",
+    "relatedness": "closely related",
+    "missing_source": "financial / project accounting",
+    "question": "What is the gross margin on branding work versus web development work this year?"
+  },
+  {
+    "id": 5,
+    "seed": "How profitable are our website projects?",
+    "relatedness": "closely related",
+    "missing_source": "financial / project accounting",
+    "question": "Which active projects are underwater against their budget right now?"
+  },
+  {
+    "id": 6,
+    "seed": "Increase recurring revenue",
+    "relatedness": "exact",
+    "missing_source": "financial / billing",
+    "question": "How much recurring revenue do we have each month right now?"
+  },
+  {
+    "id": 7,
+    "seed": "Increase recurring revenue",
+    "relatedness": "closely related",
+    "missing_source": "financial / billing",
+    "question": "What percentage of 2026 revenue is retainer or recurring versus one-off project work?"
+  },
+  {
+    "id": 8,
+    "seed": "Higher revenue per customer",
+    "relatedness": "exact",
+    "missing_source": "financial / billing",
+    "question": "What is our average revenue per customer in 2026, and how does that compare with 2025?"
+  },
+  {
+    "id": 9,
+    "seed": "Higher revenue per customer",
+    "relatedness": "closely related",
+    "missing_source": "financial / billing",
+    "question": "Which strategic partners have the highest revenue per engagement this year?"
+  },
+  {
+    "id": 10,
+    "seed": "Cash and collections",
+    "relatedness": "exact",
+    "missing_source": "financial / AR",
+    "question": "How much outstanding accounts receivable do we have, and what is aging past 60 days?"
+  },
+  {
+    "id": 11,
+    "seed": "Cash and collections",
+    "relatedness": "closely related",
+    "missing_source": "financial / AR",
+    "question": "Which clients have unpaid invoices right now, and how overdue are they?"
+  },
+  {
+    "id": 12,
+    "seed": "Cash and collections",
+    "relatedness": "closely related",
+    "missing_source": "financial / banking",
+    "question": "What is our current cash position, and can we comfortably cover payroll for the next 90 days?"
+  },
+  {
+    "id": 13,
+    "seed": "Billing rates and utilization",
+    "relatedness": "exact",
+    "missing_source": "time tracking / financial",
+    "question": "What are our current billable hourly rates by role?"
+  },
+  {
+    "id": 14,
+    "seed": "Billing rates and utilization",
+    "relatedness": "closely related",
+    "missing_source": "time tracking",
+    "question": "What is each team member's billable utilization for 2026 year to date?"
+  },
+  {
+    "id": 15,
+    "seed": "Billing rates and utilization",
+    "relatedness": "closely related",
+    "missing_source": "time tracking",
+    "question": "How many billable hours did we sell last month versus how many hours the team actually worked?"
+  },
+  {
+    "id": 16,
+    "seed": "Improve margins",
+    "relatedness": "exact",
+    "missing_source": "financial / payroll",
+    "question": "What is DEPARTURE's overall gross margin and net margin for 2026 so far?"
+  },
+  {
+    "id": 17,
+    "seed": "Improve margins",
+    "relatedness": "closely related",
+    "missing_source": "financial / payroll",
+    "question": "After payroll, benefits, office lease, and software, what is our true delivery cost per billable hour?"
+  },
+  {
+    "id": 18,
+    "seed": "Average project value",
+    "relatedness": "exact",
+    "missing_source": "financial / proposals",
+    "question": "What is our average project value for jobs closed in 2026?"
+  },
+  {
+    "id": 19,
+    "seed": "Average project value",
+    "relatedness": "closely related",
+    "missing_source": "financial / proposals",
+    "question": "What was the dollar value of the largest project we closed in the last 12 months?"
+  },
+  {
+    "id": 20,
+    "seed": "Win rate on RFPs",
+    "relatedness": "exact",
+    "missing_source": "CRM / proposals",
+    "question": "What is our RFP win rate in dollars for 2025 versus 2026?"
+  },
+  {
+    "id": 21,
+    "seed": "Win rate on RFPs",
+    "relatedness": "closely related",
+    "missing_source": "CRM / proposals",
+    "question": "How much proposal dollar volume have we sent out in 2026, and how much of that converted?"
+  },
+  {
+    "id": 22,
+    "seed": "Sales pipeline",
+    "relatedness": "exact",
+    "missing_source": "CRM",
+    "question": "What is our open sales pipeline right now by stage and expected close date?"
+  },
+  {
+    "id": 23,
+    "seed": "Sales pipeline",
+    "relatedness": "closely related",
+    "missing_source": "CRM",
+    "question": "Which opportunities are most likely to close this quarter, and what is their combined value?"
+  },
+  {
+    "id": 24,
+    "seed": "Sales pipeline",
+    "relatedness": "related",
+    "missing_source": "CRM / email",
+    "question": "How long does it typically take from first client inquiry to signed SOW?"
+  },
+  {
+    "id": 25,
+    "seed": "Customer retention",
+    "relatedness": "exact",
+    "missing_source": "financial / CRM",
+    "question": "What is our client retention rate over the past three years?"
+  },
+  {
+    "id": 26,
+    "seed": "Customer retention",
+    "relatedness": "closely related",
+    "missing_source": "financial / CRM",
+    "question": "Which clients spent with us last year but have not booked work in 2026?"
+  },
+  {
+    "id": 27,
+    "seed": "Hire additional developers",
+    "relatedness": "exact",
+    "missing_source": "HR / recruiting / payroll",
+    "question": "What is our fully loaded annual cost to hire one additional senior developer in San Diego?"
+  },
+  {
+    "id": 28,
+    "seed": "Hire additional developers",
+    "relatedness": "closely related",
+    "missing_source": "HR / recruiting",
+    "question": "How many qualified developer candidates are in our hiring pipeline right now?"
+  },
+  {
+    "id": 29,
+    "seed": "Hire additional developers",
+    "relatedness": "related",
+    "missing_source": "payroll / financial",
+    "question": "If we hire two developers this fall, how does that change our break-even monthly revenue?"
+  },
+  {
+    "id": 30,
+    "seed": "Capacity and staffing",
+    "relatedness": "exact",
+    "missing_source": "time tracking / capacity planning",
+    "question": "Based on booked work and available hours, do we have capacity to take on a new mid-size website next month without turning work away?"
+  },
+  {
+    "id": 31,
+    "seed": "Capacity and staffing",
+    "relatedness": "closely related",
+    "missing_source": "time tracking",
+    "question": "Who on the team is over 90% allocated for the next four weeks?"
+  },
+  {
+    "id": 32,
+    "seed": "Contracts and legal",
+    "relatedness": "exact",
+    "missing_source": "contracts / Dropbox / document store",
+    "question": "Which client MSAs or master agreements are expiring in the next six months?"
+  },
+  {
+    "id": 33,
+    "seed": "Contracts and legal",
+    "relatedness": "closely related",
+    "missing_source": "contracts / Dropbox",
+    "question": "Do we have a signed SOW on file for every active paying client?"
+  },
+  {
+    "id": 34,
+    "seed": "Contracts and legal",
+    "relatedness": "related",
+    "missing_source": "legal / insurance",
+    "question": "What are we paying annually for professional liability and cyber insurance?"
+  },
+  {
+    "id": 35,
+    "seed": "Office and overhead",
+    "relatedness": "exact",
+    "missing_source": "financial / facilities",
+    "question": "What is our monthly office lease cost at Hazard Center, and when is the lease up?"
+  },
+  {
+    "id": 36,
+    "seed": "Tax and entity",
+    "relatedness": "exact",
+    "missing_source": "tax / financial / CPA systems",
+    "question": "What kind of corporation should DEPARTURE be to gain the most tax benefits given our current revenue and owner compensation?"
+  },
+  {
+    "id": 37,
+    "seed": "Tax and entity",
+    "relatedness": "closely related",
+    "missing_source": "tax / financial",
+    "question": "How much have we paid in estimated quarterly taxes so far in 2026?"
+  },
+  {
+    "id": 38,
+    "seed": "Marketing and lead gen",
+    "relatedness": "exact",
+    "missing_source": "marketing analytics / CRM",
+    "question": "Which marketing channels produced the most new revenue in the last 12 months?"
+  },
+  {
+    "id": 39,
+    "seed": "Marketing and lead gen",
+    "relatedness": "closely related",
+    "missing_source": "marketing analytics",
+    "question": "What is our cost per acquired client from outbound, referrals, and inbound web leads?"
+  },
+  {
+    "id": 40,
+    "seed": "Client communication quality",
+    "relatedness": "exact",
+    "missing_source": "Slack / email",
+    "question": "What is our average client email response time, and which accounts are waiting longest for a reply?"
+  },
+  {
+    "id": 41,
+    "seed": "Client communication quality",
+    "relatedness": "closely related",
+    "missing_source": "Slack / email",
+    "question": "Are there any client escalations or unhappy threads in Slack or email from the past two weeks?"
+  },
+  {
+    "id": 42,
+    "seed": "Delivery quality via code",
+    "relatedness": "exact",
+    "missing_source": "GitHub",
+    "question": "Which client websites have had the most production hotfixes or emergency commits in 2026?"
+  },
+  {
+    "id": 43,
+    "seed": "Delivery quality via code",
+    "relatedness": "closely related",
+    "missing_source": "GitHub",
+    "question": "What is our deploy frequency and change-failure rate across active client repos?"
+  },
+  {
+    "id": 44,
+    "seed": "Assets and deliverables",
+    "relatedness": "exact",
+    "missing_source": "Dropbox",
+    "question": "Where are the final brand guidelines for our strategic partners stored, and which ones are missing current files?"
+  },
+  {
+    "id": 45,
+    "seed": "Assets and deliverables",
+    "relatedness": "related",
+    "missing_source": "Dropbox / project files",
+    "question": "How much Dropbox storage are we using, and which client folders are driving the cost?"
+  },
+  {
+    "id": 46,
+    "seed": "Website performance for clients",
+    "relatedness": "exact",
+    "missing_source": "web analytics",
+    "question": "Which DEPARTURE-built client websites have the worst Core Web Vitals or traffic drops this quarter?"
+  },
+  {
+    "id": 47,
+    "seed": "Pricing decisions",
+    "relatedness": "stretch",
+    "missing_source": "financial / CRM / time tracking",
+    "question": "If we raised web development rates 12%, how much additional annual revenue would that produce assuming volume holds?"
+  },
+  {
+    "id": 48,
+    "seed": "Pricing decisions",
+    "relatedness": "stretch",
+    "missing_source": "financial / capacity",
+    "question": "Should we turn away the next low-margin branding RFP if it would block a higher-margin web build later this quarter?"
+  },
+  {
+    "id": 49,
+    "seed": "CEO cash anxiety",
+    "relatedness": "off-the-wall",
+    "missing_source": "financial / AR / payroll",
+    "question": "If every client delayed payment by 45 days starting tomorrow, which week would we first struggle to make payroll?"
+  },
+  {
+    "id": 50,
+    "seed": "CEO future bet",
+    "relatedness": "bonkers",
+    "missing_source": "financial / CRM / forecasting systems",
+    "question": "If DEPARTURE IPO'd on the strength of Ontix IQ alone, what multiple of trailing revenue would a banker invent—and what actual trailing revenue number would they need from us first?"
+  }
+]

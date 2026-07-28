@@ -14,12 +14,14 @@ type GrindQuestion = {
   seed: string;
   relatedness: string;
   question: string;
+  missing_source?: string;
 };
 
 type CsvRow = {
   iteration: number;
   relatedness: string;
   seed: string;
+  missing_source: string;
   turn: number;
   role: "user" | "assistant" | "system";
   content: string;
@@ -33,7 +35,10 @@ type CsvRow = {
 };
 
 const ROOT = process.cwd();
-const QUESTIONS_PATH = path.join(ROOT, "scripts/grind-questions.json");
+const QUESTIONS_PATH = path.join(
+  ROOT,
+  process.env.GRIND_QUESTIONS ?? "scripts/grind-questions.json",
+);
 const OUT_DIR = path.join(ROOT, "grind-results");
 const MAX_FOLLOW_UPS = 3;
 const START_FROM = Number(process.env.GRIND_START_FROM ?? "1");
@@ -50,6 +55,7 @@ function rowToCsv(row: CsvRow): string {
     row.iteration,
     row.relatedness,
     row.seed,
+    row.missing_source,
     row.turn,
     row.role,
     row.content,
@@ -69,6 +75,7 @@ const CSV_HEADER = [
   "iteration",
   "relatedness",
   "seed",
+  "missing_source",
   "turn",
   "role",
   "content",
@@ -95,54 +102,72 @@ function followUpReply(clarification: string, original: string): string {
   const q = clarification.toLowerCase();
   const originalLower = original.toLowerCase();
 
-  if (/project|task|count|volume|biggest|client|customer/.test(q) && /revenue|dollar|profit|bill/.test(q)) {
-    return "Use project/task count, not revenue. DEPARTURE does not have financial software connected yet.";
+  // Prefer answering "which system?" before date-range heuristics.
+  if (/where (?:are|is|do)|which system|tracked|crm|salesforce|hubspot|pipedrive/.test(q)) {
+    if (/pipeline|opportunit|deal|proposal|lead|win rate|close/.test(originalLower + " " + q)) {
+      return "Opportunities and deal values are not in Asana/Notion as a source of truth—we need a connected CRM. If none is connected, say that plainly and stop clarifying.";
+    }
+    if (/invoice|revenue|billed|receivable|cash|margin|profit|payroll/.test(originalLower + " " + q)) {
+      return "Those live in billing/accounting, which is not connected. State the gap and stop clarifying.";
+    }
+    return "If the system named in my question is not connected, say so explicitly and stop asking which connected tool to misuse as a proxy.";
+  }
+
+  // Data-gap grind: insist on the CEO metric. Do not substitute Asana proxies.
+  if (/revenue|billed|billing|dollar|\$|invoice|ar\b|receivable|cash|payroll|margin|profit|rate|utilization|pipeline|crm|sow|msa|lease|tax|insurance|github|deploy|dropbox|slack|email response|analytics|core web vitals|retention|candidate|hire cost|break-even/.test(
+    originalLower,
+  )) {
+    if (/project|task|count|volume|proxy|asana|instead|available/.test(q)) {
+      return "I need the real financial/CRM/ops metric from the question—not Asana task counts as a proxy. If that system is not connected, say exactly what is missing and what connecting it would unlock.";
+    }
+  }
+  if (/revenue|billed|invoice|receivable|cash|profit|margin|payroll|rate/.test(q)) {
+    return "Yes—use actual dollars / financial records. If billing or accounting is not connected, state that gap clearly and do not invent numbers.";
+  }
+  if (/pipeline|opportunity|crm|proposal|win rate|lead/.test(q)) {
+    return "Use CRM or proposal-dollar data if available; otherwise say we lack a connected CRM/proposal system and list what would be required. Do not keep asking which system—answer with the gap.";
+  }
+  if (/utilization|billable hour|time track|allocated|capacity/.test(q)) {
+    return "Use time-tracking / capacity data. If we only have Asana assignments, say that is insufficient for true utilization.";
+  }
+  if (/msa|sow|contract|lease|insurance|dropbox|document/.test(q)) {
+    return "Look in Notion/Dropbox/document stores if connected; otherwise name the missing document source.";
+  }
+  if (/slack|email|response time|escalat/.test(q)) {
+    return "Use Slack/email if connected; otherwise say communication systems are not connected.";
+  }
+  if (/github|deploy|hotfix|commit|repo/.test(q)) {
+    return "Use GitHub if connected; otherwise say engineering telemetry is not connected.";
   }
   if (/\b(created|started|opened)\b/.test(q) && /\btask/.test(q)) {
-    return "Interpret started as tasks created in Asana.";
+    return "Only use tasks-created if the original question was about operational volume—not money.";
   }
   if (/assigned|assignee|project manager|pm\b/.test(q)) {
-    return "Focus on Leslie Ribbler and Kelly Henning as project managers.";
+    return "Focus on Leslie Ribbler and Kelly Henning as project managers when the question is about PM workload.";
   }
   if (/time.?range|period|year|month|quarter|date|through|from/.test(q)) {
     if (/2026/.test(originalLower) && /2025/.test(originalLower)) {
       return "Compare calendar H1 2025 vs H1 2026 in America/Los_Angeles.";
     }
-    if (/q1/.test(originalLower)) return "Use calendar Q1 in America/Los_Angeles.";
-    if (/2026/.test(originalLower) && /year to date|ytd|to date|this year/.test(originalLower)) {
-      return "Use calendar year 2026 to date in America/Los_Angeles.";
+    if (/q1|this quarter|next quarter/.test(originalLower)) {
+      return "Use calendar quarters in America/Los_Angeles.";
     }
-    if (/2026/.test(originalLower)) return "Use calendar year 2026 in America/Los_Angeles.";
-    if (/3 years|three years|past 3/.test(originalLower)) {
-      return "Use the trailing three full calendar years plus YTD where relevant, America/Los_Angeles.";
+    if (/2026/.test(originalLower)) return "Use calendar year 2026 to date in America/Los_Angeles.";
+    if (/3 years|three years|past 3|12 months|last year/.test(originalLower)) {
+      return "Use the periods named in the question, America/Los_Angeles.";
     }
     return "Use America/Los_Angeles calendar periods; prefer year-to-date 2026 unless the question names another range.";
   }
-  if (/video|web|brand|design|creative|service/.test(q)) {
-    return "Use organization-approved service keywords from ORGANIZATION.md (video/YouTube/TikTok; website/WordPress/AWS/Vue; branding/logo/style guide/design).";
-  }
-  if (/aws|cloud|cost|spend|subscription/.test(q)) {
-    if (/break|cancel|contract|egress|migration/.test(q) || /break|alternative/.test(originalLower)) {
-      return "Use current AWS inventory and Cost Explorer evidence; if contract termination fees are not in our systems, say so plainly and estimate migration effort from inventory only.";
-    }
-    return "Use actual AWS Cost Explorer / inventory data we have connected. Monthly view is fine if YTD is unavailable.";
-  }
-  if (/rfp|proposal/.test(q)) {
-    return "Search Asana/Notion for RFP or proposal language; if the data is thin, say so and give what you can find.";
-  }
-  if (/profit|margin|hourly rate|billing/.test(q)) {
-    return "We do not have financial software connected. Say what is knowable from projects/tasks and call out the profitability gap.";
-  }
   if (/tax|corporation|s-corp|c-corp|llc/.test(q)) {
-    return "This is advisory only — give a high-level comparison for a CA creative/tech services firm and note we need a CPA for anything actionable.";
+    return "Give only what our systems support; for entity/tax advice note CPA input is required and current revenue/comp figures are unavailable without financial systems.";
   }
-  if (/metaphor|joke|bonkers|hypothetical|twilight|burrito|mole|raspberry/.test(q)) {
-    return "Answer the playful framing briefly, then ground the useful part in real DEPARTURE data where possible.";
+  if (/metaphor|joke|bonkers|hypothetical|ipo|banker/.test(q)) {
+    return "Answer briefly, then state the real trailing-revenue / data prerequisite we cannot currently pull.";
   }
   if (/clarif|mean by|which metric|confirm/.test(q)) {
-    return "Use the most operational metric available in Asana/AWS/Notion; state assumptions.";
+    return "Prefer the literal CEO metric in the question. If unavailable, name the missing source instead of substituting a weak proxy.";
   }
-  return "Use the best available evidence from Asana, AWS, and Notion. State assumptions and confidence. Prefer calendar 2026 YTD in America/Los_Angeles when the period is ambiguous.";
+  return "Answer with connected evidence when it helps, but explicitly call out any missing system required for a High Confidence answer.";
 }
 
 async function appendRow(csvPath: string, row: CsvRow): Promise<void> {
@@ -180,10 +205,12 @@ async function main(): Promise<void> {
 
     await appendFile(
       logPath,
-      `\n=== Iteration ${item.id} (${item.relatedness}) ===\nQ: ${item.question}\n`,
+      `\n=== Iteration ${item.id} (${item.relatedness} · ${item.missing_source ?? "n/a"}) ===\nQ: ${item.question}\n`,
       "utf8",
     );
-    console.log(`\n[${item.id}/50] ${item.relatedness}: ${item.question}`);
+    console.log(
+      `\n[${item.id}/50] ${item.relatedness} · ${item.missing_source ?? "?"}: ${item.question}`,
+    );
 
     try {
       while (true) {
@@ -192,6 +219,7 @@ async function main(): Promise<void> {
           iteration: item.id,
           relatedness: item.relatedness,
           seed: item.seed,
+          missing_source: item.missing_source ?? "",
           turn,
           role: "user",
           content: pending,
@@ -219,6 +247,7 @@ async function main(): Promise<void> {
           iteration: item.id,
           relatedness: item.relatedness,
           seed: item.seed,
+          missing_source: item.missing_source ?? "",
           turn,
           role: "assistant",
           content: answer.text,
@@ -245,6 +274,7 @@ async function main(): Promise<void> {
             iteration: item.id,
             relatedness: item.relatedness,
             seed: item.seed,
+            missing_source: item.missing_source ?? "",
             turn: turn + 1,
             role: "system",
             content: "Stopped after max follow-ups without a final answer.",
@@ -270,6 +300,7 @@ async function main(): Promise<void> {
         iteration: item.id,
         relatedness: item.relatedness,
         seed: item.seed,
+        missing_source: item.missing_source ?? "",
         turn: turn + 1,
         role: "system",
         content: message,
