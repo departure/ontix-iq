@@ -102,7 +102,7 @@ function followUpReply(clarification: string, original: string): string {
   const q = clarification.toLowerCase();
   const originalLower = original.toLowerCase();
 
-  // Prefer answering "which system?" before date-range heuristics.
+  // Prefer answering "which system?" / definitional clarifies before date-range heuristics.
   if (/where (?:are|is|do)|which system|tracked|crm|salesforce|hubspot|pipedrive/.test(q)) {
     if (/pipeline|opportunit|deal|proposal|lead|win rate|close/.test(originalLower + " " + q)) {
       return "Opportunities and deal values are not in Asana/Notion as a source of truth—we need a connected CRM. If none is connected, say that plainly and stop clarifying.";
@@ -112,16 +112,33 @@ function followUpReply(clarification: string, original: string): string {
     }
     return "If the system named in my question is not connected, say so explicitly and stop asking which connected tool to misuse as a proxy.";
   }
+  if (/underwater|budget|over.?budget|job.?cost|project.?profit|cost.?plus/.test(q + " " + originalLower)) {
+    return "Treat underwater as simulated invoice revenue below associated delivery cost if available in QuickBooks; if projects are not costed individually, say job-level budgets are missing and stop clarifying.";
+  }
+  if (/retention|retained|repeat customer|spent .+ last year/.test(q + " " + originalLower)) {
+    return "Define retention from simulated QuickBooks invoices: a retained customer billed in year N and again in year N+1. Compute 2023→2024, 2024→2025, and 2025→2026 where data exists. Label synthetic and stop clarifying.";
+  }
+  if (/corporation|s-corp|c-corp|llc|tax benefit|entity/.test(q + " " + originalLower)) {
+    return "Use simulated QuickBooks P&L/payroll only as illustrative context. Give a high-level S-corp vs C-corp vs LLC comparison for a CA creative/tech services firm, state CPA advice is required, label figures synthetic, and stop clarifying.";
+  }
+  if (/12%|raised? .* rates|additional annual revenue|volume holds/.test(q + " " + originalLower)) {
+    return "Use simulated 2026 YTD Design/Strategy invoice totals from QuickBooks as the baseline, apply +12% assuming volume holds, annualize if needed, label synthetic, and stop clarifying.";
+  }
+  if (/mean by|which metric|confirm|accrual|cash basis|recognize/.test(q)) {
+    if (/revenue|billed|invoice|profit|margin|receivable|cash/.test(originalLower)) {
+      return "Use accrual-basis simulated QuickBooks figures for 2026 YTD unless I named cash basis. Label results as synthetic and stop clarifying.";
+    }
+  }
 
-  // Data-gap grind: insist on the CEO metric. Do not substitute Asana proxies.
-  if (/revenue|billed|billing|dollar|\$|invoice|ar\b|receivable|cash|payroll|margin|profit|rate|utilization|pipeline|crm|sow|msa|lease|tax|insurance|github|deploy|dropbox|slack|email response|analytics|core web vitals|retention|candidate|hire cost|break-even/.test(
+  // Data-gap grind: prefer simulated QuickBooks for dollar metrics; never Asana proxies.
+  if (/revenue|billed|billing|dollar|\$|invoice|ar\b|receivable|cash|payroll|margin|profit|break-even|hire cost/.test(
     originalLower,
   )) {
     if (/project|task|count|volume|proxy|asana|instead|available/.test(q)) {
-      return "I need the real financial/CRM/ops metric from the question—not Asana task counts as a proxy. If that system is not connected, say exactly what is missing and what connecting it would unlock.";
+      return "Use simulated QuickBooks for the dollar metric—not Asana task counts. Label all figures as synthetic. If the metric still cannot be computed from QB reports/invoices, say exactly what is missing.";
     }
   }
-  if (/revenue|billed|invoice|receivable|cash|profit|margin|payroll|rate/.test(q)) {
+  if (/revenue|billed|invoice|receivable|cash|profit|margin|payroll|rate|lease|insurance|tax/.test(q)) {
     return "Use the simulated QuickBooks records for financial amounts and clearly label them as synthetic. Do not substitute Asana activity for dollars.";
   }
   if (/pipeline|opportunity|crm|proposal|win rate|lead/.test(q)) {

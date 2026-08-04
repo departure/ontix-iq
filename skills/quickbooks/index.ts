@@ -27,6 +27,7 @@ import {
   optionalString,
 } from "./shared.js";
 
+export * from "./analytics.js";
 export * from "./client.js";
 export * from "./data/index.js";
 export * from "./reports.js";
@@ -62,7 +63,7 @@ export class QuickBooksSkill implements Skill {
         name: "quickbooks_query",
         skill: this.name,
         description:
-          "Run a read-only QBO-style SELECT * query against synthetic Account, Customer, Vendor, Item, Invoice, Payment, Bill, BillPayment, Purchase, or JournalEntry records. Supports AND-combined TxnDate bounds and Id/name/reference equality, plus STARTPOSITION and MAXRESULTS (maximum 1000).",
+          "Run a read-only QBO-style SELECT * query against synthetic Account, Customer, Vendor, Item, Invoice, Payment, Bill, BillPayment, Purchase, or JournalEntry records. Supports AND-combined TxnDate bounds and Id/name/reference equality, plus STARTPOSITION and MAXRESULTS (maximum 1000). Prefer quickbooks_analyze_customer_revenue or quickbooks_analyze_service_revenue instead of paging invoices for rankings or service-mix questions.",
         inputSchema: {
           type: "object",
           properties: {
@@ -81,7 +82,7 @@ export class QuickBooksSkill implements Skill {
         name: "quickbooks_transactions",
         skill: this.name,
         description:
-          "Search synthetic transactions with structured date, type, customer, vendor, and 1-based pagination filters. Customer/vendor filters accept an exact ID or exact display name.",
+          "Search synthetic transactions with structured date, type, customer, vendor, and 1-based pagination filters. Customer/vendor filters accept an exact ID or exact display name. Prefer analytical tools for customer rankings and service-mix totals.",
         inputSchema: {
           type: "object",
           properties: {
@@ -132,6 +133,41 @@ export class QuickBooksSkill implements Skill {
           additionalProperties: false,
         },
       },
+      {
+        name: "quickbooks_analyze_customer_revenue",
+        skill: this.name,
+        description:
+          "Exact ranking of customers by synthetic invoiced revenue for a date range. ALWAYS use this for biggest-client-by-revenue, top-N billed clients, or revenue-per-customer rankings. Aggregates every invoice in range—do not page raw Invoice queries and sum them manually.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            startDate: DATE_SCHEMA,
+            endDate: DATE_SCHEMA,
+            limit: {
+              type: "integer",
+              minimum: 1,
+              maximum: 100,
+              default: 25,
+              description: "Maximum customers to return in the ranking.",
+            },
+          },
+          additionalProperties: false,
+        },
+      },
+      {
+        name: "quickbooks_analyze_service_revenue",
+        skill: this.name,
+        description:
+          "Exact synthetic invoiced revenue by ORGANIZATION.md service line (Branding, Web development, Video, Imaging) for a date range. ALWAYS use this for website vs branding vs video revenue mix or service-line dollar comparisons. Does not allocate COGS by service—pair with ProfitAndLoss for company-wide margins.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            startDate: DATE_SCHEMA,
+            endDate: DATE_SCHEMA,
+          },
+          additionalProperties: false,
+        },
+      },
     ];
   }
 
@@ -145,6 +181,10 @@ export class QuickBooksSkill implements Skill {
         return [this.transactionsEvidence(input)];
       case "quickbooks_report":
         return [this.reportEvidence(input)];
+      case "quickbooks_analyze_customer_revenue":
+        return [this.customerRevenueEvidence(input)];
+      case "quickbooks_analyze_service_revenue":
+        return [this.serviceRevenueEvidence(input)];
       default:
         throw new Error(`Unknown QuickBooks tool: ${toolName}`);
     }
@@ -315,6 +355,79 @@ export class QuickBooksSkill implements Skill {
         endDate: result.Header.EndPeriod,
         totals: result.totals,
         metadata: result.metadata,
+      }),
+      result,
+      { ...request },
+    );
+  }
+
+  private customerRevenueEvidence(input: unknown): Evidence {
+    const value = assertObject(input, "quickbooks_analyze_customer_revenue input");
+    assertNoUnknownKeys(
+      value,
+      ["startDate", "endDate", "limit"],
+      "quickbooks_analyze_customer_revenue input",
+    );
+    const request = {
+      ...(optionalString(value, "startDate") === undefined
+        ? {}
+        : { startDate: optionalString(value, "startDate") }),
+      ...(optionalString(value, "endDate") === undefined
+        ? {}
+        : { endDate: optionalString(value, "endDate") }),
+      ...(value.limit === undefined
+        ? {}
+        : { limit: optionalInteger(value, "limit", 1, 100, 25) }),
+    };
+    const result = this.client.analyzeCustomerRevenue(request);
+    return evidence(
+      "Synthetic QuickBooks customer revenue ranking",
+      "quickbooks://simulated/analytics/customer-revenue",
+      compactJson({
+        syntheticSimulation: true,
+        startDate: result.startDate,
+        endDate: result.endDate,
+        totalInvoiced: result.totalInvoiced,
+        invoiceCount: result.invoiceCount,
+        customerCount: result.customerCount,
+        topCustomer: result.ranking[0] ?? null,
+      }),
+      result,
+      { ...request },
+    );
+  }
+
+  private serviceRevenueEvidence(input: unknown): Evidence {
+    const value = assertObject(input, "quickbooks_analyze_service_revenue input");
+    assertNoUnknownKeys(
+      value,
+      ["startDate", "endDate"],
+      "quickbooks_analyze_service_revenue input",
+    );
+    const request = {
+      ...(optionalString(value, "startDate") === undefined
+        ? {}
+        : { startDate: optionalString(value, "startDate") }),
+      ...(optionalString(value, "endDate") === undefined
+        ? {}
+        : { endDate: optionalString(value, "endDate") }),
+    };
+    const result = this.client.analyzeServiceRevenue(request);
+    return evidence(
+      "Synthetic QuickBooks service revenue mix",
+      "quickbooks://simulated/analytics/service-revenue",
+      compactJson({
+        syntheticSimulation: true,
+        startDate: result.startDate,
+        endDate: result.endDate,
+        totalInvoiced: result.totalInvoiced,
+        invoiceCount: result.invoiceCount,
+        services: result.services.map((service) => ({
+          serviceKey: service.serviceKey,
+          displayName: service.displayName,
+          invoicedAmount: service.invoicedAmount,
+          shareOfTotal: service.shareOfTotal,
+        })),
       }),
       result,
       { ...request },

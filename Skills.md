@@ -20,6 +20,15 @@ Cost data can lag. Billing APIs may need permissions beyond IAM `ReadOnlyAccess`
 
 Uses Notion search to identify shared pages and data sources, recursively reads bounded page blocks, and queries structured data sources. Only objects shared with the integration are visible.
 
+## QuickBooks (synthetic)
+
+Local read-only simulation—no live QuickBooks, OAuth, or network. Provides company info, QBO-style queries, transaction search, standard reports (P&L, Balance Sheet, Cash Flow, AR/AP aging, GL), plus aggregate analytics:
+
+- `quickbooks_analyze_customer_revenue` for exact customer rankings by invoiced dollars
+- `quickbooks_analyze_service_revenue` for Branding / Web / Video / Imaging revenue mix aligned to ORGANIZATION.md
+
+All figures must be labeled synthetic.
+
 ## Adding a skill
 
 Create `skills/<name>/manifest.json`, `SKILL.md`, and a `Skill` implementation. Register the instance in `src/app.ts`. This manual registration is the only prototype limitation; a future package loader should validate signed manifests before dynamic import.

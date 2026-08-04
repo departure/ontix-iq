@@ -878,6 +878,15 @@ vendors, and financial reports. These records are useful for product development
 demonstrations, but they are not actual DEPARTURE financial records and must always be
 described as simulated.
 
+Invoice line items use ORGANIZATION.md service lines:
+- Branding services
+- Web development services
+- Video services
+- Imaging services
+
+Use QuickBooks customer-revenue and service-revenue analytics tools for rankings and
+service-mix questions instead of paging raw invoice lists.
+
 ---
 
 # Notes

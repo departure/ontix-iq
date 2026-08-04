@@ -1,3 +1,11 @@
+import {
+  analyzeCustomerRevenue,
+  analyzeServiceRevenue,
+  type CustomerRevenueAnalysis,
+  type CustomerRevenueAnalysisRequest,
+  type ServiceRevenueAnalysis,
+  type ServiceRevenueAnalysisRequest,
+} from "./analytics.js";
 import { simulatedFinancialDataset } from "./data/index.js";
 import type {
   EntityType,
@@ -116,6 +124,12 @@ export interface QuickBooksClient {
   query(query: string): QboQueryResponse;
   transactions(request: TransactionSearchRequest): TransactionSearchResponse;
   report(request: ReportRequest): QboStyleReport;
+  analyzeCustomerRevenue(
+    request?: CustomerRevenueAnalysisRequest,
+  ): CustomerRevenueAnalysis;
+  analyzeServiceRevenue(
+    request?: ServiceRevenueAnalysisRequest,
+  ): ServiceRevenueAnalysis;
   datasetRange(): { startDate: IsoDate; endDate: IsoDate };
 }
 
@@ -250,6 +264,18 @@ export class SimulatedQuickBooksClient implements QuickBooksClient {
 
   report(request: ReportRequest): QboStyleReport {
     return buildReport(this.dataset, request);
+  }
+
+  analyzeCustomerRevenue(
+    request: CustomerRevenueAnalysisRequest = {},
+  ): CustomerRevenueAnalysis {
+    return analyzeCustomerRevenue(this.dataset, request);
+  }
+
+  analyzeServiceRevenue(
+    request: ServiceRevenueAnalysisRequest = {},
+  ): ServiceRevenueAnalysis {
+    return analyzeServiceRevenue(this.dataset, request);
   }
 
   datasetRange(): { startDate: IsoDate; endDate: IsoDate } {

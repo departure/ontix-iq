@@ -128,8 +128,10 @@ const ACCOUNT_SEEDS: AccountSeed[] = [
   { id: "12", name: "Payroll Liabilities", classification: "Liability", type: "Other Current Liability", subtype: "PayrollClearing" },
   { id: "20", name: "Opening Balance Equity", classification: "Equity", type: "Equity", subtype: "OpeningBalanceEquity" },
   { id: "21", name: "Owner Distributions", classification: "Equity", type: "Equity", subtype: "OwnersEquity" },
-  { id: "30", name: "Design Services Income", classification: "Revenue", type: "Income", subtype: "ServiceFeeIncome" },
-  { id: "31", name: "Strategy Services Income", classification: "Revenue", type: "Income", subtype: "ServiceFeeIncome" },
+  { id: "30", name: "Branding Services Income", classification: "Revenue", type: "Income", subtype: "ServiceFeeIncome" },
+  { id: "31", name: "Web Development Services Income", classification: "Revenue", type: "Income", subtype: "ServiceFeeIncome" },
+  { id: "32", name: "Video Services Income", classification: "Revenue", type: "Income", subtype: "ServiceFeeIncome" },
+  { id: "33", name: "Imaging Services Income", classification: "Revenue", type: "Income", subtype: "ServiceFeeIncome" },
   { id: "40", name: "Project Costs", classification: "Expense", type: "Cost of Goods Sold", subtype: "SuppliesMaterialsCogs" },
   { id: "41", name: "Payroll Wages", classification: "Expense", type: "Expense", subtype: "PayrollWageExpenses" },
   { id: "42", name: "Payroll Taxes", classification: "Expense", type: "Expense", subtype: "PayrollTaxExpenses" },
@@ -317,8 +319,10 @@ function createVendors(): QboVendor[] {
 function createItems(accounts: QboAccount[]): QboItem[] {
   const accountById = new Map(accounts.map((account) => [account.Id, account]));
   return ([
-    ["item-30", "Design services", "30"],
-    ["item-31", "Strategy services", "31"],
+    ["item-30", "Branding services", "30"],
+    ["item-31", "Web development services", "31"],
+    ["item-32", "Video services", "32"],
+    ["item-33", "Imaging services", "33"],
   ] as const).map(([id, name, accountId]) => {
     const account = accountById.get(accountId);
     if (id === undefined || name === undefined || account === undefined) {
@@ -483,15 +487,16 @@ function addInvoice(
   const customer = requireCustomer(state, customerId);
   const id = nextId(state, "inv");
   const total = roundMoney(baseAmount * AR_MULTIPLIER);
+  // Line mix aligns with ORGANIZATION.md services: Brand, Web, Video, Imaging.
   const serviceDefinitions = [
-    ["31", 0.12, "Discovery and research"],
-    ["31", 0.13, "Brand and content strategy"],
-    ["30", 0.18, "UX and information architecture"],
-    ["30", 0.20, "Visual design"],
-    ["30", 0.15, "Production design"],
-    ["31", 0.08, "Project management"],
-    ["30", 0.09, "Quality assurance"],
-    ["31", 0.05, "Account services"],
+    ["30", 0.15, "Brand identity and style guide"],
+    ["30", 0.10, "Logo and visual branding"],
+    ["31", 0.18, "Website UX and information architecture"],
+    ["31", 0.17, "Website design and front-end"],
+    ["31", 0.10, "WordPress / Vue production"],
+    ["32", 0.12, "Video production and editing"],
+    ["32", 0.08, "Motion and social video"],
+    ["33", 0.10, "Custom imaging and photography"],
   ] as const;
   let allocated = 0;
   const serviceLines: Array<[string, number, string]> = serviceDefinitions.map(
@@ -503,7 +508,14 @@ function addInvoice(
       return [accountId, amount, description];
     },
   );
+  const itemByAccount = new Map(
+    state.items.map((item) => [item.IncomeAccountRef.value, item]),
+  );
   const lines: QboSalesItemLine[] = serviceLines.map(([accountId, amount, description], index) => {
+    const item = itemByAccount.get(accountId);
+    if (item === undefined) {
+      throw new Error(`Missing service item for income account ${accountId}`);
+    }
     return {
       Id: `${id}-L${index + 1}`,
       LineNum: index + 1,
@@ -511,7 +523,7 @@ function addInvoice(
       DetailType: "SalesItemLineDetail",
       Description: `${description} — ${memo}`,
       SalesItemLineDetail: {
-        ItemRef: reference(`item-${accountId}`, description),
+        ItemRef: reference(item.Id, item.Name),
         Qty: 1,
         UnitPrice: amount,
         TaxCodeRef: reference("NON", "Non-Taxable"),

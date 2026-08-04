@@ -29,7 +29,7 @@ describe("simulated QuickBooks client", () => {
       "SELECT * FROM BillPayment WHERE TxnDate >= '2026-01-01' MAXRESULTS 10",
     );
 
-    expect(items.QueryResponse.Item).toHaveLength(2);
+    expect(items.QueryResponse.Item).toHaveLength(4);
     expect(billPayments.QueryResponse.BillPayment).toHaveLength(10);
   });
 
@@ -135,14 +135,54 @@ describe("simulated QuickBooks client", () => {
     expect(ledger.Rows.Row).toHaveLength(25);
     expect(ledger.metadata).toMatchObject({ returnedRows: 25, truncated: true });
   });
+  it("produces exact customer and service revenue analytics without invoice paging", () => {
+    const client = new SimulatedQuickBooksClient();
+    const customers = client.analyzeCustomerRevenue({
+      startDate: "2026-01-01",
+      endDate: "2026-08-04",
+      limit: 10,
+    });
+    const services = client.analyzeServiceRevenue({
+      startDate: "2026-01-01",
+      endDate: "2026-08-04",
+    });
+    const paged = client.query(
+      "SELECT * FROM Invoice WHERE TxnDate >= '2026-01-01' AND TxnDate <= '2026-08-04' STARTPOSITION 1 MAXRESULTS 25",
+    );
+
+    expect(customers.invoiceCount).toBeGreaterThan(
+      (paged.QueryResponse.Invoice as unknown[]).length,
+    );
+    expect(customers.ranking).toHaveLength(10);
+    expect(customers.ranking[0]?.invoicedAmount).toBeGreaterThan(0);
+    expect(
+      customers.ranking.reduce((sum, row) => sum + row.invoicedAmount, 0),
+    ).toBeLessThanOrEqual(customers.totalInvoiced + 0.001);
+    expect(customers.truncated).toBe(customers.customerCount > 10);
+    expect(services.services.map((row) => row.serviceKey)).toEqual([
+      "branding",
+      "web",
+      "video",
+      "imaging",
+    ]);
+    expect(services.services.every((row) => row.invoicedAmount > 0)).toBe(true);
+    expect(
+      services.services.reduce((sum, row) => sum + row.invoicedAmount, 0),
+    ).toBeCloseTo(services.totalInvoiced, 2);
+    expect(services.limitations[0]).toContain("ORGANIZATION.md");
+  });
 });
 
 describe("QuickBooks skill", () => {
-  it("advertises four read-only tools and clearly labels synthetic evidence", async () => {
+  it("advertises analytical tools and clearly labels synthetic evidence", async () => {
     const skill = new QuickBooksSkill();
     const tools = await skill.tools();
-    const evidence = await skill.execute("quickbooks_report", {
-      reportName: "ProfitAndLoss",
+    const evidence = await skill.execute("quickbooks_analyze_customer_revenue", {
+      startDate: "2026-01-01",
+      endDate: "2026-08-04",
+      limit: 5,
+    });
+    const serviceEvidence = await skill.execute("quickbooks_analyze_service_revenue", {
       startDate: "2026-01-01",
       endDate: "2026-08-04",
     });
@@ -153,12 +193,17 @@ describe("QuickBooks skill", () => {
       "quickbooks_query",
       "quickbooks_transactions",
       "quickbooks_report",
+      "quickbooks_analyze_customer_revenue",
+      "quickbooks_analyze_service_revenue",
     ]);
     expect(evidence[0]).toMatchObject({
       source: "quickbooks",
-      locator: "quickbooks://simulated/reports/ProfitAndLoss",
+      locator: "quickbooks://simulated/analytics/customer-revenue",
     });
     expect(evidence[0]?.summary).toContain("Synthetic simulation");
+    expect(serviceEvidence[0]?.locator).toBe(
+      "quickbooks://simulated/analytics/service-revenue",
+    );
     expect(doctor).toMatchObject({ status: "ok" });
     expect(doctor.message).toContain("no network");
   });
