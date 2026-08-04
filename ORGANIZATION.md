@@ -862,11 +862,21 @@ Systems expected to be connected.
 
 Dropbox
 
-Financial Software (TBD)
-
 Slack
 
 GitHub
+
+---
+
+# Connected Financial Data
+
+QuickBooks Online is represented by a read-only local simulation for MVP development.
+
+The simulated company file covers August 1, 2023 through August 4, 2026. It contains
+synthetic invoices, payments, bills, purchases, payroll journals, accounts, customers,
+vendors, and financial reports. These records are useful for product development and
+demonstrations, but they are not actual DEPARTURE financial records and must always be
+described as simulated.
 
 ---
 

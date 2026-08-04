@@ -4,7 +4,13 @@ export type TenantContext = {
   conversationId: string;
 };
 
-export type EvidenceSource = "asana" | "aws" | "notion" | "organization" | "memory";
+export type EvidenceSource =
+  | "asana"
+  | "aws"
+  | "notion"
+  | "quickbooks"
+  | "organization"
+  | "memory";
 
 export type Evidence = {
   id: string;

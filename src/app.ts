@@ -7,6 +7,7 @@ import { TwoTierQueryCache } from "./storage/query-cache.js";
 import { AsanaSkill } from "../skills/asana/index.js";
 import { AwsSkill } from "../skills/aws/index.js";
 import { NotionSkill } from "../skills/notion/index.js";
+import { QuickBooksSkill } from "../skills/quickbooks/index.js";
 
 export type Application = ReturnType<typeof createApplication>;
 
@@ -18,7 +19,12 @@ export function createApplication(config: AppConfig = readConfig()) {
   );
   const llm = new OpenAILLMProvider(config);
   const skills = new SkillRegistry(
-    [new AsanaSkill(config, queryCache), new AwsSkill(config), new NotionSkill(config)],
+    [
+      new AsanaSkill(config, queryCache),
+      new AwsSkill(config),
+      new NotionSkill(config),
+      new QuickBooksSkill(),
+    ],
     store,
     config.runtime.toolTimeoutMs,
   );

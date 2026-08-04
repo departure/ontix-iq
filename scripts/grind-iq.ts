@@ -108,7 +108,7 @@ function followUpReply(clarification: string, original: string): string {
       return "Opportunities and deal values are not in Asana/Notion as a source of truth—we need a connected CRM. If none is connected, say that plainly and stop clarifying.";
     }
     if (/invoice|revenue|billed|receivable|cash|margin|profit|payroll/.test(originalLower + " " + q)) {
-      return "Those live in billing/accounting, which is not connected. State the gap and stop clarifying.";
+      return "Use the connected simulated QuickBooks company for the requested period. Clearly label every resulting number as simulated rather than actual company financial data.";
     }
     return "If the system named in my question is not connected, say so explicitly and stop asking which connected tool to misuse as a proxy.";
   }
@@ -122,7 +122,7 @@ function followUpReply(clarification: string, original: string): string {
     }
   }
   if (/revenue|billed|invoice|receivable|cash|profit|margin|payroll|rate/.test(q)) {
-    return "Yes—use actual dollars / financial records. If billing or accounting is not connected, state that gap clearly and do not invent numbers.";
+    return "Use the simulated QuickBooks records for financial amounts and clearly label them as synthetic. Do not substitute Asana activity for dollars.";
   }
   if (/pipeline|opportunity|crm|proposal|win rate|lead/.test(q)) {
     return "Use CRM or proposal-dollar data if available; otherwise say we lack a connected CRM/proposal system and list what would be required. Do not keep asking which system—answer with the gap.";
@@ -159,10 +159,10 @@ function followUpReply(clarification: string, original: string): string {
     return "Use America/Los_Angeles calendar periods; prefer year-to-date 2026 unless the question names another range.";
   }
   if (/tax|corporation|s-corp|c-corp|llc/.test(q)) {
-    return "Give only what our systems support; for entity/tax advice note CPA input is required and current revenue/comp figures are unavailable without financial systems.";
+    return "Use simulated QuickBooks only for synthetic financial context; note that entity and tax advice still requires a CPA and actual company records.";
   }
   if (/metaphor|joke|bonkers|hypothetical|ipo|banker/.test(q)) {
-    return "Answer briefly, then state the real trailing-revenue / data prerequisite we cannot currently pull.";
+    return "Answer briefly, then distinguish simulated trailing revenue from the actual financial records required for a real decision.";
   }
   if (/clarif|mean by|which metric|confirm/.test(q)) {
     return "Prefer the literal CEO metric in the question. If unavailable, name the missing source instead of substituting a weak proxy.";
