@@ -1,4 +1,6 @@
 node_modules/
+.pnpm-store/
+.cursor/
 .env
 .env.*
 !.env.example
@@ -9,6 +11,7 @@ auth/
 grind-results/
 .coverage/
 coverage/
+*.log
 .dev.vars
 **/.dev.vars
 .wrangler/
@@ -18,3 +21,5 @@ packages/*/.wrangler/
 packages/*/wrangler.prod.jsonc
 packages/*/wrangler.dev.jsonc
 deployment.local.jsonc
+# npm leftover; pnpm-lock.yaml is the lockfile of record
+package-lock.json

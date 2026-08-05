@@ -5,13 +5,14 @@
 Requirements: Node.js 24+, pnpm 11, and Git.
 
 ```bash
-git submodule update --init
-pnpm install
-pnpm --dir cloudflare-os install
-pnpm dev
+pnpm start
 ```
 
-Open `http://localhost:8787`. The wrapper temporarily introduces the Ontix Gatekeepers to the pinned upstream local runner and removes those links when it exits. Local Cloudflare state lives under `cloudflare-os/.wrangler`.
+Open `http://localhost:8787`. That initializes the Cloudflare OS submodule, installs dependencies, and starts the local server. Use `pnpm dev` when the checkout is already warm. The wrapper temporarily introduces the Ontix Gatekeepers to the pinned upstream local runner and removes those links when it exits. Local Cloudflare state lives under `cloudflare-os/.wrangler`.
+
+Press `q` to stop the server; `x`, `Ctrl+C`, and closing the terminal do the same. The wrapper owns the keyboard and terminates the whole server process group, because the upstream runner keeps one file watcher per Gatekeeper alive after Wrangler exits and would otherwise never return the prompt. Wrangler's own hotkeys are unavailable as a result.
+
+Local multi-config Wrangler binds Gatekeepers by the symlink directory name (`gatekeeper-asana`, `gatekeeper-aws`, `gatekeeper-organization`, `gatekeeper-quickbooks`). Each package's `wrangler.jsonc` `name` must match that directory so Miniflare can find the Worker. Production Worker names still come from `deployment.jsonc` and overwrite these during `pnpm deploy`.
 
 The wrapper reads the existing untracked `.env` without printing values. AWS variables are mapped into the AWS Worker. The Asana Gatekeeper needs `ASANA_ACCESS_TOKEN` and `ASANA_WORKSPACE_GID`; the former TUI’s encrypted MCP OAuth session cannot safely be copied into a Worker. Add those variables locally or complete the dedicated OAuth connection flow in a future sprint. QuickBooks and organization context require no credentials.
 

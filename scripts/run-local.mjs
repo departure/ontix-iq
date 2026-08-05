@@ -22,15 +22,42 @@ for (const [name, target] of links) {
   const path = join(upstream, "packages", name);
   if (!existsSync(path)) symlinkSync(target, path, "dir");
 }
-const child = spawn(process.execPath, ["run-dev-server.js", "--serve-frontend-assets"], { cwd: upstream, stdio: "inherit", env: { ...process.env, ...environment } });
+// The upstream runner keeps a file watcher per gatekeeper alive after Wrangler exits, and those
+// child handles hold its event loop open indefinitely. Its own group leader lets us signal the
+// whole tree at once, and owning the keyboard here means quitting never depends on that runner.
+const child = spawn(process.execPath, ["run-dev-server.js", "--serve-frontend-assets"], { cwd: upstream, stdio: ["ignore", "inherit", "inherit"], detached: true, env: { ...process.env, ...environment } });
 const cleanup = () => {
   for (const [name] of links) {
     try { unlinkSync(join(upstream, "packages", name)); } catch {}
   }
 };
-process.on("SIGINT", () => child.kill("SIGINT"));
-process.on("SIGTERM", () => child.kill("SIGTERM"));
-child.on("exit", (code) => { cleanup(); process.exitCode = code ?? 0; });
+let stopping = false;
+const stop = () => {
+  if (stopping) return;
+  stopping = true;
+  try { process.kill(-child.pid, "SIGTERM"); } catch {}
+  setTimeout(() => { try { process.kill(-child.pid, "SIGKILL"); } catch {} }, 5000).unref();
+};
+if (process.stdin.isTTY) {
+  process.stdin.setRawMode(true);
+  process.stdin.setEncoding("utf8");
+  process.stdin.resume();
+  // Raw mode clears ISIG, so Ctrl+C and Ctrl+D arrive as data rather than signals. Keystrokes
+  // typed while the server boots arrive coalesced into one chunk, so scan rather than compare.
+  process.stdin.on("data", (keys) => { if (/[qx\u0003\u0004]/.test(keys)) stop(); });
+  console.log("\nOntix IQ dev server starting. Press q to quit.\n");
+}
+process.on("SIGINT", stop);
+process.on("SIGTERM", stop);
+// Its own group no longer receives the terminal's hangup, so closing the window must stop it here.
+process.on("SIGHUP", stop);
+process.on("exit", () => { try { process.kill(-child.pid, "SIGTERM"); } catch {} });
+child.on("exit", (code) => {
+  cleanup();
+  if (process.stdin.isTTY) process.stdin.setRawMode(false);
+  process.stdin.pause();
+  process.exitCode = code ?? 0;
+});
 
 function loadEnvironment(path) {
   if (!existsSync(path)) return {};

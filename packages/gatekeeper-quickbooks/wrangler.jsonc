@@ -1,6 +1,6 @@
 {
   "$schema": "../../node_modules/wrangler/config-schema.json",
-  "name": "ontix-iq-quickbooks",
+  "name": "gatekeeper-quickbooks",
   "main": ".wrangler/validate/src/index.ts",
   "build": {
     "command": "pnpm exec capnweb-validate build --out .wrangler/validate",
