@@ -1,42 +1,14 @@
-# Skills
+# Skills and Gatekeepers
 
-Skills are independently documented integrations registered through a common interface. Each exposes model-visible JSON schemas, executes with tenant context, returns normalized evidence, and implements a non-destructive health check.
+Cloudflare OS Gatekeepers enforce authority; skills teach the agent when and how to use that authority. A skill never contains credentials and does not bypass a Gatekeeper.
 
-## Asana
+| Capability | Agent guidance | Worker | Status |
+| --- | --- | --- | --- |
+| Organization | `skills/organization/SKILL.md` | `packages/custom-gatekeeper` | Canonical, read-only |
+| Asana | `skills/asana/SKILL.md` | `packages/gatekeeper-asana` | Read-only; token/workspace required |
+| QuickBooks | `skills/quickbooks/SKILL.md` | `packages/gatekeeper-quickbooks` | Read-only synthetic simulation |
+| AWS | `skills/aws/SKILL.md` | `packages/gatekeeper-aws` | Read-only; least-privilege credentials required |
 
-Uses the official V2 MCP Streamable HTTP endpoint. OAuth uses a pre-registered MCP client, PKCE, refresh tokens, and an exact local callback URL. Tool discovery occurs through `tools/list`; mutation-like tool names are excluded.
+The public API for each capability is its `src/types.d.ts`; its JSDoc is the agent-facing reference. Every provider read calls `authorizeObservation()`. No current session interface exposes a method with external side effects.
 
-## AWS
-
-Uses AWS SDK v3 with the configured read-only IAM identity. It provides:
-
-- actual cost and amortized cost by period/service
-- Reserved Instance and Savings Plans utilization
-- EC2, RDS, S3, CloudFront, and WAF inventory
-
-Cost data can lag. Billing APIs may need permissions beyond IAM `ReadOnlyAccess`.
-
-## Notion
-
-Uses Notion search to identify shared pages and data sources, recursively reads bounded page blocks, and queries structured data sources. Only objects shared with the integration are visible.
-
-## QuickBooks (synthetic)
-
-Local read-only simulation—no live QuickBooks, OAuth, or network. Provides company info, QBO-style queries, transaction search, standard reports (P&L, Balance Sheet, Cash Flow, AR/AP aging, GL), plus aggregate analytics:
-
-- `quickbooks_analyze_customer_revenue` for exact customer rankings by invoiced dollars
-- `quickbooks_analyze_service_revenue` for Branding / Web / Video / Imaging revenue mix aligned to ORGANIZATION.md
-
-All figures must be labeled synthetic.
-
-## Adding a skill
-
-Create `skills/<name>/manifest.json`, `SKILL.md`, and a `Skill` implementation. Register the instance in `src/app.ts`. This manual registration is the only prototype limitation; a future package loader should validate signed manifests before dynamic import.
-
-## Evidence contract
-
-Evidence includes a stable per-answer ID, source, title, locator, retrieval timestamp, summary, optional structured data, and original query. The synthesis prompt may cite only IDs supplied in this collection.
-
-## TODO
-
-Action-capable skills remain disabled until capability-level permissions, previews, user approvals, idempotency, and action audit records are implemented.
+To add a capability, design and review the narrow session API first, then implement authentication, observation or staged-action handling, resource scoping, observer verification, tests, deployment binding, and a companion skill. Follow the pinned upstream `write-gatekeeper` guidance.

@@ -1,0 +1,3 @@
+[submodule "cloudflare-os"]
+	path = cloudflare-os
+	url = https://github.com/cloudflare/cloudflare-os.git

@@ -1,0 +1,95 @@
+{
+  // Cloudflare account that owns every Worker and provisioned resource.
+  // Find it: https://developers.cloudflare.com/fundamentals/account/find-account-and-zone-ids/
+  "accountId": "<CLOUDFLARE_ACCOUNT_ID>",
+
+  // Worker names are permanent service identities. Keep them unique within the account.
+  // Reference: docs/customization.md#workers-and-routing
+  "workers": {
+    "workshop": {
+      "name": "ontix-iq-art",
+
+      // Production: use a hostname in an active Cloudflare zone. Wrangler creates DNS and TLS.
+      // Evaluation: replace this with "route": { "workersDev": true }.
+      // https://developers.cloudflare.com/workers/configuration/routing/custom-domains/
+      "route": { "customDomain": "art.ontixiq.com" }
+    },
+    "context": { "name": "ontix-iq-art-context" },
+    "customGatekeeper": { "name": "ontix-iq-art-organization" },
+    "asanaGatekeeper": { "name": "ontix-iq-art-asana" },
+    "quickBooksGatekeeper": { "name": "ontix-iq-art-quickbooks" },
+    "awsGatekeeper": { "name": "ontix-iq-art-aws" },
+    "errorReporter": { "name": "<ERROR_REPORTER_WORKER_NAME>" }
+  },
+
+  // This starter deploys Cloudflare Access mode. Cloudflare OS also supports built-in password
+  // accounts and auth Gatekeeper sign-in; see the reference below before switching. The audience
+  // comes from the self-hosted Access application protecting the Workshop hostname.
+  // "admins" gates /admin in every sign-in method.
+  // Reference: docs/customization.md#sign-in-methods
+  "access": {
+    "issuer": "https://<TEAM_NAME>.cloudflareaccess.com",
+    "audience": "<ACCESS_AUDIENCE>",
+    "admins": ["<ADMIN_EMAIL>"]
+  },
+
+  // Optional platform-funded model catalog. Leave disabled to deploy without AI setup.
+  // When enabled, replace every placeholder and install CF_AI_GATEWAY_API_TOKEN separately.
+  // Reference: docs/customization.md#ai-models
+  "aiGateway": {
+    "enabled": false,
+    "name": "<AI_GATEWAY_NAME>",
+    "accountId": "<AI_GATEWAY_ACCOUNT_ID>",
+    "providers": ["anthropic", "openai", "google", "cloudflare"],
+
+    // "direct" sends Workers AI to its REST endpoint. "gateway" adds AI Gateway logs.
+    "workersAi": { "mode": "gateway", "gateway": "<WORKERS_AI_GATEWAY_NAME>" }
+  },
+
+  "context": {
+    // Isolates Context data shared by this Workshop deployment.
+    "sharingDomain": "production",
+
+    // null: Wrangler provisions and remembers a KV namespace on first deploy.
+    // string: bind an existing namespace by ID.
+    "kvNamespaceId": null
+  },
+
+  // Displayed to agents when the example custom integration is enabled in /admin.
+  // Reference: docs/customization.md#custom-gatekeepers
+  "customGatekeeper": {
+    "name": "DEPARTURE",
+    "message": "Answer Art directly. Use ORGANIZATION context before interpreting company names, services, KPIs, or recurring questions. Label all QuickBooks figures as synthetic."
+  },
+
+  "integrations": {
+    "asana": { "workspaceGid": "<ASANA_WORKSPACE_GID>" },
+    "aws": { "regions": ["us-west-2", "us-east-1"] }
+  },
+
+  // Explicit backend issue reports go to a private Worker that emits structured console errors.
+  // Set release to a commit/version when your deployment pipeline has one.
+  // Reference: docs/observability.md#quick-start
+  "errorReporting": {
+    "enabled": true,
+    "environment": "production",
+    "release": null
+  },
+
+  // null values use Wrangler automatic provisioning. Set IDs/names to reuse owned resources.
+  // https://developers.cloudflare.com/workers/wrangler/configuration/#automatic-provisioning
+  "resources": {
+    "blueprintsKvNamespaceId": null,
+    "avatarsKvNamespaceId": null,
+    "blueprintContentBucket": null
+  },
+
+  // Structured custom logs stay enabled. Invocation logs and traces are separate volume controls.
+  // https://developers.cloudflare.com/workers/observability/logs/workers-logs/
+  "observability": {
+    "enabled": true,
+    "headSamplingRate": 1,
+    "logs": { "invocationLogs": false },
+    "traces": { "enabled": false, "headSamplingRate": 0.1 }
+  }
+}

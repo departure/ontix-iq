@@ -1,0 +1,21 @@
+{
+  "name": "error-reporter",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "scripts": {
+    "build": "tsc",
+    "types:check": "tsc --noEmit",
+    "test": "vitest run src/format.test.ts"
+  },
+  "dependencies": {
+    "@gadgets/error-reporting": "workspace:*"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260702.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10",
+    "wrangler": "^4.115.0"
+  }
+}

@@ -1,0 +1,2 @@
+const TYPES_CODE = "/** Least-privilege, read-only AWS account capability. */\nexport interface CustomSession {\n  getIdentity(): Promise<{ account?: string; arn?: string }>;\n  getCosts(options: { start: string; end: string; granularity?: \"DAILY\" | \"MONTHLY\"; groupByService?: boolean }): Promise<unknown>;\n  getCommitmentUtilization(options: { start: string; end: string }): Promise<unknown>;\n  getInventory(): Promise<unknown>;\n}\n";
+export default TYPES_CODE;

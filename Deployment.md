@@ -1,86 +1,56 @@
 # Deployment
 
-## Double-click launch on macOS
+## Local browser application
 
-`Launch Ontix IQ.command` is a Finder-friendly launcher for non-technical users.
-Double-clicking it opens Terminal, checks or installs Homebrew, Git, Node.js,
-npm, and project packages, performs first-run setup, and starts the app.
-
-Before handing off a copy:
-
-1. Keep the launcher beside `package.json`.
-2. Supply a configured `.env` using dedicated, least-privileged demo
-   credentials. Never distribute personal or production credentials.
-3. Either include `.data` if the recipient is authorized to use the existing
-   Asana session, or omit `.data` so the launcher opens the recipient's browser
-   for one-time Asana authorization.
-4. Preserve the launcher's executable permission when copying or archiving it.
-
-If macOS warns about an unverified downloaded file, right-click the launcher
-once and choose **Open**. The launcher is a readable shell script, not a signed
-macOS application.
-
-## Run in the terminal
-
-Requirements: macOS/Linux, Node.js 26.4 or newer, npm, and an interactive terminal.
+Requirements: Node.js 24+, pnpm 11, and Git.
 
 ```bash
-npm install
-npm run setup
+git submodule update --init
+pnpm install
+pnpm --dir cloudflare-os install
+pnpm dev
 ```
 
-Edit `.env` with the OpenAI, AWS, Notion, and Asana values. The Asana app must be an MCP app, distributed to the DEPARTURE workspace, with this exact redirect URL:
+Open `http://localhost:8787`. The wrapper temporarily introduces the Ontix Gatekeepers to the pinned upstream local runner and removes those links when it exits. Local Cloudflare state lives under `cloudflare-os/.wrangler`.
 
-```text
-http://127.0.0.1:3334/oauth/callback
-```
+The wrapper reads the existing untracked `.env` without printing values. AWS variables are mapped into the AWS Worker. The Asana Gatekeeper needs `ASANA_ACCESS_TOKEN` and `ASANA_WORKSPACE_GID`; the former TUI’s encrypted MCP OAuth session cannot safely be copied into a Worker. Add those variables locally or complete the dedicated OAuth connection flow in a future sprint. QuickBooks and organization context require no credentials.
 
-Authorize and validate:
+Cloudflare OS manages model-provider credentials in its own UI. The existing `OPENAI_API_KEY` is not copied into agent-visible configuration.
+
+## Validate
 
 ```bash
-npm run auth:asana
-npm run doctor
+pnpm test
+pnpm typecheck
+pnpm check
 ```
 
-Launch the chatbot:
+`pnpm check` builds all Workers and performs deployment dry runs. Active Cloudflare account and Access values are required in `deployment.jsonc`; placeholders intentionally make production validation fail early rather than deploy to the wrong account.
+
+## Production at art.ontixiq.com
+
+1. Create a Cloudflare Access self-hosted application for `art.ontixiq.com`.
+2. Fill in `accountId`, Access issuer, audience, admin email, and optional AI Gateway values in `deployment.jsonc`.
+3. Install Worker secrets interactively—never place them in `deployment.jsonc`:
 
 ```bash
-npm run dev
+pnpm exec wrangler secret put ASANA_ACCESS_TOKEN --config packages/gatekeeper-asana/wrangler.jsonc
+pnpm exec wrangler secret put AWS_ACCESS_KEY --config packages/gatekeeper-aws/wrangler.jsonc
+pnpm exec wrangler secret put AWS_ACCESS_KEY_SECRET --config packages/gatekeeper-aws/wrangler.jsonc
 ```
 
-Use `/help` in the terminal. Production-compiled launch:
+Set `ASANA_WORKSPACE_GID` and `AWS_REGIONS` as non-secret Worker variables in the production generated configuration before deployment automation is finalized. Then authenticate and deploy:
 
 ```bash
-npm run build
-npm start
+pnpm exec wrangler login
+pnpm check
+pnpm deploy
 ```
 
-OpenTUI uses Node's native FFI renderer. The npm scripts supply `--experimental-ffi`; launching the JavaScript file directly without that flag will fail.
+The deploy script builds and deploys the private error reporter, upstream Context Worker, all Ontix Gatekeepers, and finally the Workshop Worker. Wrangler creates DNS/TLS for `art.ontixiq.com` and can automatically provision the configured KV/R2 resources.
 
-## Docker
+After deployment, sign in, open `/admin`, set the Ontix IQ branding, enable the organization and connector Gatekeepers, introduce them to Art’s agent, and verify that reads appear as observations.
 
-```bash
-docker compose build
-docker compose run --rm ontix-iq
-```
+## Upgrades and rollback
 
-The Compose service allocates a TTY and persists encrypted OAuth tokens and local memory in a named volume. Complete Asana authorization on the host first or expose a callback appropriate to the container.
-
-## Railway
-
-`railway.json` and the Dockerfile are build-compatible, but this release's only interface is interactive terminal I/O. A normal Railway web service has no end-user TTY. Deploy the future HTTP adapter rather than treating a continuously running terminal process as production hosting.
-
-Configure all environment variables in Railway; do not upload `.env`. Use a persistent volume for `ONTIX_DATA_DIR` until PostgreSQL and a managed token store are implemented.
-
-## Cloudflare Temporary Accounts
-
-The core interfaces are portable, but this Node terminal artifact is not a Workers application. A Cloudflare release must provide Web API adapters for model calls, OAuth callback, storage, and vendor connectivity. No core agent or evidence contract needs to change.
-
-## Troubleshooting
-
-- **Asana client not found/workspace unavailable:** verify MCP app type, distribution workspace, V2 endpoint, and exact callback URL.
-- **Asana says not authorized:** run `npm run auth:asana`; deleting `.data/secrets/asana-tokens.json` forces a clean flow.
-- **AWS costs unavailable:** enable Cost Explorer and grant billing read access.
-- **Notion returns little data:** share relevant pages and data sources with the integration.
-- **Doctor reports model error:** verify `OPENAI_MODEL` is available to the API key.
-- **Terminal error:** confirm `node --version` is at least 26.4 and run through npm scripts.
+Update only the pinned `cloudflare-os` submodule commit. Review upstream security and migration notes, run all validation, test on a staging hostname, then promote. Use Cloudflare deployment history or `wrangler rollback` if verification fails.

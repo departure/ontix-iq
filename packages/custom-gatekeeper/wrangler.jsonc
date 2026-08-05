@@ -1,0 +1,29 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "custom-gatekeeper",
+  "main": ".wrangler/validate/src/index.ts",
+  "build": {
+    "command": "pnpm exec capnweb-validate build --out .wrangler/validate",
+    "watch_dir": "src"
+  },
+  "compatibility_date": "2026-08-04",
+  "compatibility_flags": ["allow_irrevocable_stub_storage", "nodejs_compat"],
+  "rules": [
+    { "type": "Text", "globs": ["**/*.txt", "**/*.md"], "fallthrough": false }
+  ],
+  "migrations": [
+    {
+      "tag": "v0",
+      "new_sqlite_classes": ["CustomGatekeeper"]
+    }
+  ],
+  "vars": {
+    "CUSTOM_NAME": "Example organization",
+    "CUSTOM_MESSAGE": "Replace this with information useful to your organization."
+  },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+    "logs": { "invocation_logs": false }
+  }
+}

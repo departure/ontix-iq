@@ -1,0 +1,2 @@
+const TYPES_CODE = "export interface DateRange { startDate?: string; endDate?: string }\n/** Fixed synthetic QuickBooks capability. Every returned value is simulated, never live accounting data. */\nexport interface CustomSession {\n  getCompanyInfo(): Promise<unknown>;\n  analyzeCustomerRevenue(options?: DateRange & { limit?: number }): Promise<unknown>;\n  analyzeServiceRevenue(options?: DateRange): Promise<unknown>;\n  getProfitAndLoss(options?: DateRange & { accountingMethod?: \"ACCRUAL\" | \"CASH\" }): Promise<unknown>;\n}\n";
+export default TYPES_CODE;
