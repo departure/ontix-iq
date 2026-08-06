@@ -35,6 +35,7 @@ const requiredPaths = [
   "customGatekeeper.name",
   "customGatekeeper.message",
   "integrations.asana.workspaceGid",
+  "integrations.asana.clientId",
   "integrations.aws.regions",
   "observability.enabled",
   "observability.headSamplingRate",
@@ -335,7 +336,11 @@ export function generateConfigs(config, bases) {
     CUSTOM_MESSAGE: config.customGatekeeper.message,
   };
   setCommon(asanaGatekeeper, config, config.workers.asanaGatekeeper.name);
-  asanaGatekeeper.vars = { ...asanaGatekeeper.vars, ASANA_WORKSPACE_GID: config.integrations.asana.workspaceGid };
+  asanaGatekeeper.vars = {
+    ...asanaGatekeeper.vars,
+    ASANA_WORKSPACE_GID: config.integrations.asana.workspaceGid,
+    ASANA_CLIENT_ID: config.integrations.asana.clientId,
+  };
   setCommon(quickBooksGatekeeper, config, config.workers.quickBooksGatekeeper.name);
   setCommon(awsGatekeeper, config, config.workers.awsGatekeeper.name);
   awsGatekeeper.vars = { ...awsGatekeeper.vars, AWS_REGIONS: config.integrations.aws.regions.join(",") };

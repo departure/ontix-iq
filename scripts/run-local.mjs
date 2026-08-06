@@ -2,6 +2,7 @@ import { existsSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from
 import { execFileSync, spawn } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { loadTuiAsanaMcpTokens } from "./asana-mcp-tokens.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const upstream = join(root, "cloudflare-os");
@@ -16,7 +17,7 @@ if (!existsSync(join(upstream, "package.json"))) throw new Error("Cloudflare OS 
 const environment = loadEnvironment(join(root, ".env"));
 execFileSync("pnpm", ["--filter", "@gadgets/typed-storage", "build"], { cwd: upstream, stdio: "inherit" });
 execFileSync("pnpm", ["--filter", "@gadgets/workshop-frontend", "exec", "vite", "build"], { cwd: upstream, stdio: "inherit" });
-writeVars(join(root, "packages/gatekeeper-asana/.dev.vars"), environment, ["ASANA_ACCESS_TOKEN", "ASANA_WORKSPACE_GID"]);
+writeAsanaDevVars(environment);
 writeVars(join(root, "packages/gatekeeper-aws/.dev.vars"), environment, ["AWS_ACCESS_KEY", "AWS_ACCESS_KEY_SECRET", "AWS_REGIONS"]);
 for (const [name, target] of links) {
   const path = join(upstream, "packages", name);
@@ -26,17 +27,26 @@ for (const [name, target] of links) {
 // child handles hold its event loop open indefinitely. Its own group leader lets us signal the
 // whole tree at once, and owning the keyboard here means quitting never depends on that runner.
 const child = spawn(process.execPath, ["run-dev-server.js", "--serve-frontend-assets"], { cwd: upstream, stdio: ["ignore", "inherit", "inherit"], detached: true, env: { ...process.env, ...environment } });
+let cleanedUp = false;
 const cleanup = () => {
+  if (cleanedUp) return;
+  cleanedUp = true;
   for (const [name] of links) {
     try { unlinkSync(join(upstream, "packages", name)); } catch {}
   }
+  if (process.stdin.isTTY) process.stdin.setRawMode(false);
+  process.stdin.pause();
 };
 let stopping = false;
+let expectedExitCode;
+let stopTimer;
 const stop = () => {
   if (stopping) return;
   stopping = true;
+  expectedExitCode = 0;
   try { process.kill(-child.pid, "SIGTERM"); } catch {}
-  setTimeout(() => { try { process.kill(-child.pid, "SIGKILL"); } catch {} }, 5000).unref();
+  stopTimer = setTimeout(() => { try { process.kill(-child.pid, "SIGKILL"); } catch {} }, 5000);
+  stopTimer.unref();
 };
 if (process.stdin.isTTY) {
   process.stdin.setRawMode(true);
@@ -51,13 +61,40 @@ process.on("SIGINT", stop);
 process.on("SIGTERM", stop);
 // Its own group no longer receives the terminal's hangup, so closing the window must stop it here.
 process.on("SIGHUP", stop);
-process.on("exit", () => { try { process.kill(-child.pid, "SIGTERM"); } catch {} });
+process.on("exit", () => {
+  cleanup();
+  try { process.kill(-child.pid, "SIGTERM"); } catch {}
+});
 child.on("exit", (code) => {
   cleanup();
-  if (process.stdin.isTTY) process.stdin.setRawMode(false);
-  process.stdin.pause();
-  process.exitCode = code ?? 0;
+  clearTimeout(stopTimer);
+  process.exit(stopping ? expectedExitCode : (code ?? 0));
 });
+
+function writeAsanaDevVars(values) {
+  const tui = loadTuiAsanaMcpTokens(root, values);
+  const merged = {
+    ASANA_CLIENT_ID: values.ASANA_CLIENT_ID,
+    ASANA_CLIENT_SECRET: values.ASANA_CLIENT_SECRET,
+    ASANA_WORKSPACE_GID: values.ASANA_WORKSPACE_GID,
+    ASANA_REFRESH_TOKEN: values.ASANA_REFRESH_TOKEN || tui?.refreshToken,
+    // Prefer an MCP OAuth access token from the TUI store; the REST PAT is not valid for MCP.
+    ASANA_ACCESS_TOKEN: tui?.accessToken || values.ASANA_MCP_ACCESS_TOKEN,
+  };
+  writeVars(join(root, "packages/gatekeeper-asana/.dev.vars"), merged, [
+    "ASANA_CLIENT_ID",
+    "ASANA_CLIENT_SECRET",
+    "ASANA_WORKSPACE_GID",
+    "ASANA_REFRESH_TOKEN",
+    "ASANA_ACCESS_TOKEN",
+  ]);
+  if (!merged.ASANA_REFRESH_TOKEN) {
+    console.warn(
+      "Asana MCP: no refresh token found in .env (ASANA_REFRESH_TOKEN) or the TUI token store. " +
+      "Authorize with the legacy TUI flow or set ASANA_REFRESH_TOKEN before using the Asana Gatekeeper.",
+    );
+  }
+}
 
 function loadEnvironment(path) {
   if (!existsSync(path)) return {};

@@ -1,6 +1,8 @@
 packages:
   - cloudflare-os/packages/workshop-shared
   - cloudflare-os/packages/error-reporting
+  - cloudflare-os/packages/backend-utils
+  - cloudflare-os/packages/mcp-shared
   - packages/*
 
 allowBuilds:

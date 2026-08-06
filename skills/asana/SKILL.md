@@ -5,7 +5,7 @@ description: Answer Art Bradshaw's project-volume, client, staffing, service-mix
 
 # Asana executive intelligence
 
-Use the `ASANA` capability for claims about DEPARTURE projects or tasks. Search within a bounded date range, state whether the result set reached the 100-row limit, and do not interpret a capped result as an exhaustive count. Resolve ambiguity with the organization context before querying.
+Use the `ASANA` capability for claims about DEPARTURE projects or tasks. Resolve people with `findUsers` before assignee filters. Prefer `searchTasks` with `assigneeGid` (exhaustive via MCP `get_tasks` pagination) or with both `startDate` and `endDate` (exhaustive partitioned `search_tasks`). When neither assignee nor a full date range is set, treat a 100-row result as a capped sample, not an exhaustive count. Resolve ambiguity with the organization context before querying.
 
 For comparisons, retrieve consistent periods and filters. Project names are the default client proxy only when organization context supports that interpretation. Distinguish created tasks, assigned tasks, and completed tasks. Cite the observations used and report retrieval gaps plainly.
 

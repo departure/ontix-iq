@@ -14,7 +14,7 @@ Press `q` to stop the server; `x`, `Ctrl+C`, and closing the terminal do the sam
 
 Local multi-config Wrangler binds Gatekeepers by the symlink directory name (`gatekeeper-asana`, `gatekeeper-aws`, `gatekeeper-organization`, `gatekeeper-quickbooks`). Each package's `wrangler.jsonc` `name` must match that directory so Miniflare can find the Worker. Production Worker names still come from `deployment.jsonc` and overwrite these during `pnpm deploy`.
 
-The wrapper reads the existing untracked `.env` without printing values. AWS variables are mapped into the AWS Worker. The Asana Gatekeeper needs `ASANA_ACCESS_TOKEN` and `ASANA_WORKSPACE_GID`; the former TUI’s encrypted MCP OAuth session cannot safely be copied into a Worker. Add those variables locally or complete the dedicated OAuth connection flow in a future sprint. QuickBooks and organization context require no credentials.
+The wrapper reads the existing untracked `.env` without printing values. AWS variables are mapped into the AWS Worker. The Asana Gatekeeper talks to **Asana MCP** and needs `ASANA_CLIENT_ID`, `ASANA_CLIENT_SECRET`, `ASANA_WORKSPACE_GID`, and an MCP OAuth refresh token. Locally, `pnpm dev` will load the refresh/access pair from the legacy TUI store at `.data/secrets/asana-tokens.json` when `ASANA_REFRESH_TOKEN` is unset. A REST personal access token is not valid for MCP. QuickBooks and organization context require no credentials.
 
 Cloudflare OS manages model-provider credentials in its own UI. The existing `OPENAI_API_KEY` is not copied into agent-visible configuration.
 
@@ -35,12 +35,13 @@ pnpm check
 3. Install Worker secrets interactively—never place them in `deployment.jsonc`:
 
 ```bash
-pnpm exec wrangler secret put ASANA_ACCESS_TOKEN --config packages/gatekeeper-asana/wrangler.jsonc
+pnpm exec wrangler secret put ASANA_CLIENT_SECRET --config packages/gatekeeper-asana/wrangler.jsonc
+pnpm exec wrangler secret put ASANA_REFRESH_TOKEN --config packages/gatekeeper-asana/wrangler.jsonc
 pnpm exec wrangler secret put AWS_ACCESS_KEY --config packages/gatekeeper-aws/wrangler.jsonc
 pnpm exec wrangler secret put AWS_ACCESS_KEY_SECRET --config packages/gatekeeper-aws/wrangler.jsonc
 ```
 
-Set `ASANA_WORKSPACE_GID` and `AWS_REGIONS` as non-secret Worker variables in the production generated configuration before deployment automation is finalized. Then authenticate and deploy:
+Set `ASANA_CLIENT_ID`, `ASANA_WORKSPACE_GID`, and `AWS_REGIONS` as non-secret Worker variables via `deployment.jsonc` before deployment. Then authenticate and deploy:
 
 ```bash
 pnpm exec wrangler login

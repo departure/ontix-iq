@@ -14,7 +14,10 @@
       "new_sqlite_classes": ["CustomGatekeeper"]
     }
   ],
-  "vars": { "ASANA_WORKSPACE_GID": "" },
+  "vars": {
+    "ASANA_WORKSPACE_GID": "",
+    "ASANA_CLIENT_ID": ""
+  },
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1,

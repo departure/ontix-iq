@@ -18,7 +18,14 @@ import type {
   SupportedResource,
   VendorDescription,
 } from "@gadgets/workshop-shared/gatekeeper";
-import type { AsanaTaskSummary, CustomSession } from "./types.js";
+import {
+  AsanaMcpClient,
+  extractDataRows,
+  type AsanaOAuthTokens,
+  type AsanaTokenStore,
+} from "./mcp.js";
+import { findUsersViaMcp, searchTasksViaMcp } from "./retrieval.js";
+import type { AsanaTaskSummary, AsanaUserSummary, CustomSession } from "./types.js";
 import TYPES_CODE from "./types-code.js";
 
 const CUSTOM_ICON = {
@@ -28,6 +35,8 @@ const CUSTOM_ICON = {
       "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256' fill='none' stroke='currentColor' stroke-width='20'><path d='M52 72h152v112H52z'/><path d='m52 88 76 52 76-52'/></svg>",
     ),
 };
+
+const TOKEN_STORAGE_KEY = "asanaMcpTokens";
 
 type ObservationQueue = Pick<ApprovalQueue, "authorizeObservation"> &
   Partial<{ [Symbol.dispose](): void }>;
@@ -40,7 +49,7 @@ export function describeCustomVendor(): VendorDescription {
     color: "#e8f2ff",
     tagline: "Read-only DEPARTURE project intelligence",
     description:
-      "Searches tasks and projects without exposing credentials or mutation capabilities.",
+      "Searches tasks and projects through Asana MCP without exposing credentials or mutation capabilities.",
     autoProvisionsAccount: true,
     providesAuth: false,
   };
@@ -49,11 +58,15 @@ export function describeCustomVendor(): VendorDescription {
 function taskSummary(value: unknown): AsanaTaskSummary {
   const task = value as Record<string, unknown>;
   return {
-    gid: String(task.gid ?? ""), name: String(task.name ?? ""), completed: Boolean(task.completed),
+    gid: String(task.gid ?? ""),
+    name: String(task.name ?? ""),
+    completed: Boolean(task.completed),
     ...(typeof task.created_at === "string" ? { createdAt: task.created_at } : {}),
     ...(typeof task.completed_at === "string" ? { completedAt: task.completed_at } : {}),
     ...(task.assignee ? { assignee: task.assignee as { gid: string; name: string } } : {}),
-    projects: Array.isArray(task.projects) ? task.projects as Array<{ gid: string; name: string }> : [],
+    projects: Array.isArray(task.projects)
+      ? task.projects as Array<{ gid: string; name: string }>
+      : [],
     ...(typeof task.permalink_url === "string" ? { permalinkUrl: task.permalink_url } : {}),
   };
 }
@@ -69,49 +82,80 @@ export function describeCustomAccount(): AccountDescription {
 @validateRpc()
 export class CustomSessionImpl extends RpcTarget implements CustomSession {
   readonly #approvalQueue: ObservationQueue;
-  readonly #token: string;
+  readonly #mcp: AsanaMcpClient;
   readonly #workspace: string;
 
-  constructor(approvalQueue: ObservationQueue, token: string, workspace: string) {
+  constructor(approvalQueue: ObservationQueue, mcp: AsanaMcpClient, workspace: string) {
     super();
     this.#approvalQueue = approvalQueue;
-    this.#token = token;
+    this.#mcp = mcp;
     this.#workspace = workspace;
   }
 
-  async searchTasks(options: { text?: string; startDate?: string; endDate?: string; assigneeGid?: string; completed?: boolean; limit?: number }): Promise<AsanaTaskSummary[]> {
+  async findUsers(query: string): Promise<AsanaUserSummary[]> {
+    await this.#approvalQueue.authorizeObservation({
+      title: "Find Asana users",
+      description: `Find Asana users matching ${JSON.stringify(query)}.`,
+    });
+    this.#requireWorkspace();
+    return findUsersViaMcp(this.#mcp, this.#workspace, query);
+  }
+
+  async searchTasks(options: {
+    text?: string;
+    startDate?: string;
+    endDate?: string;
+    assigneeGid?: string;
+    completed?: boolean;
+    limit?: number;
+  }): Promise<AsanaTaskSummary[]> {
     await this.#approvalQueue.authorizeObservation({
       title: "Search Asana tasks",
       description: `Search DEPARTURE Asana tasks using ${JSON.stringify(options)}.`,
     });
-    const params = new URLSearchParams({ limit: String(Math.min(Math.max(options.limit ?? 100, 1), 100)), opt_fields: "gid,name,completed,created_at,completed_at,assignee.gid,assignee.name,projects.gid,projects.name,permalink_url" });
-    if (options.text) params.set("text", options.text);
-    if (options.startDate) params.set("created_at.after", `${options.startDate}T00:00:00.000Z`);
-    if (options.endDate) params.set("created_at.before", `${options.endDate}T23:59:59.999Z`);
-    if (options.assigneeGid) params.set("assignee.any", options.assigneeGid);
-    if (options.completed !== undefined) params.set("completed", String(options.completed));
-    const response = await this.#request(`/workspaces/${encodeURIComponent(this.#workspace)}/tasks/search?${params}`);
-    return (response.data as unknown[]).map(taskSummary);
+    this.#requireWorkspace();
+    const rows = await searchTasksViaMcp(this.#mcp, {
+      ...options,
+      workspaceGid: this.#workspace,
+    });
+    return rows.map(taskSummary);
   }
 
   async getTask(taskGid: string): Promise<AsanaTaskSummary> {
-    await this.#approvalQueue.authorizeObservation({ title: "Read Asana task", description: `Read Asana task ${taskGid}.` });
-    const response = await this.#request(`/tasks/${encodeURIComponent(taskGid)}?opt_fields=gid,name,completed,created_at,completed_at,assignee.gid,assignee.name,projects.gid,projects.name,permalink_url`);
-    return taskSummary(response.data);
+    await this.#approvalQueue.authorizeObservation({
+      title: "Read Asana task",
+      description: `Read Asana task ${taskGid}.`,
+    });
+    const rows = extractDataRows(await this.#mcp.getTask(taskGid));
+    if (!rows[0]) throw new Error(`Asana task ${taskGid} was not found`);
+    return taskSummary(rows[0]);
   }
 
   async listProjects(limit = 100): Promise<Array<{ gid: string; name: string; archived: boolean }>> {
-    await this.#approvalQueue.authorizeObservation({ title: "List Asana projects", description: "List projects in the DEPARTURE workspace." });
-    const params = new URLSearchParams({ limit: String(Math.min(Math.max(limit, 1), 100)), opt_fields: "gid,name,archived" });
-    const response = await this.#request(`/workspaces/${encodeURIComponent(this.#workspace)}/projects?${params}`);
-    return response.data as Array<{ gid: string; name: string; archived: boolean }>;
+    await this.#approvalQueue.authorizeObservation({
+      title: "List Asana projects",
+      description: "List projects in the DEPARTURE workspace.",
+    });
+    this.#requireWorkspace();
+    const result = await this.#mcp.getProjects({
+      workspace: this.#workspace,
+      limit: Math.min(Math.max(limit, 1), 100),
+      archived: false,
+    });
+    return extractDataRows(result).map((value) => {
+      const project = value as Record<string, unknown>;
+      return {
+        gid: String(project.gid ?? ""),
+        name: String(project.name ?? ""),
+        archived: Boolean(project.archived),
+      };
+    });
   }
 
-  async #request(path: string): Promise<{ data: unknown }> {
-    if (!this.#token || !this.#workspace) throw new Error("Asana Gatekeeper requires ASANA_ACCESS_TOKEN and ASANA_WORKSPACE_GID secrets");
-    const response = await fetch(`https://app.asana.com/api/1.0${path}`, { headers: { authorization: `Bearer ${this.#token}`, accept: "application/json" } });
-    if (!response.ok) throw new Error(`Asana request failed with HTTP ${response.status}`);
-    return await response.json() as { data: unknown };
+  #requireWorkspace(): void {
+    if (!this.#workspace) {
+      throw new Error("Asana Gatekeeper requires ASANA_WORKSPACE_GID");
+    }
   }
 
   [Symbol.dispose](): void {
@@ -125,7 +169,7 @@ export class CustomGatekeeper extends DurableObject<Cloudflare.Env> implements G
     return {
       url: "https://app.asana.com/0/search",
       title: "DEPARTURE Asana workspace",
-      snippet: "Read-only task and project search.",
+      snippet: "Read-only task and project search via Asana MCP.",
       suggestedBindingName: "ASANA",
       tsType: "CustomSession",
     };
@@ -140,7 +184,40 @@ export class CustomGatekeeper extends DurableObject<Cloudflare.Env> implements G
   }
 
   async startSession(approvalQueue: RpcStub<ApprovalQueue>): Promise<CustomSession> {
-    return new CustomSessionImpl(approvalQueue.dup(), this.env.ASANA_ACCESS_TOKEN, this.env.ASANA_WORKSPACE_GID);
+    const credentials = {
+      clientId: this.env.ASANA_CLIENT_ID ?? "",
+      clientSecret: this.env.ASANA_CLIENT_SECRET ?? "",
+      refreshToken: this.env.ASANA_REFRESH_TOKEN ?? "",
+      accessToken: this.env.ASANA_ACCESS_TOKEN,
+    };
+    if (!credentials.clientId || !credentials.clientSecret || !credentials.refreshToken) {
+      throw new Error(
+        "Asana Gatekeeper requires ASANA_CLIENT_ID, ASANA_CLIENT_SECRET, and ASANA_REFRESH_TOKEN",
+      );
+    }
+    const store = this.#tokenStore();
+    // Seed DO storage from env bootstrap tokens when empty so the first call can refresh.
+    if (!(await store.read()) && credentials.refreshToken) {
+      await store.write({
+        accessToken: credentials.accessToken ?? "",
+        refreshToken: credentials.refreshToken,
+      });
+    }
+    const mcp = new AsanaMcpClient(credentials, store);
+    return new CustomSessionImpl(approvalQueue.dup(), mcp, this.env.ASANA_WORKSPACE_GID ?? "");
+  }
+
+  #tokenStore(): AsanaTokenStore {
+    const storage = this.ctx.storage;
+    return {
+      async read(): Promise<AsanaOAuthTokens | null> {
+        const value = await storage.get<AsanaOAuthTokens>(TOKEN_STORAGE_KEY);
+        return value ?? null;
+      },
+      async write(tokens: AsanaOAuthTokens): Promise<void> {
+        await storage.put(TOKEN_STORAGE_KEY, tokens);
+      },
+    };
   }
 
   async addObserver(_id: string, _user: Fetcher<GatekeeperUserVerifier>): Promise<void> {}

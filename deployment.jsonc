@@ -63,7 +63,11 @@
   },
 
   "integrations": {
-    "asana": { "workspaceGid": "<ASANA_WORKSPACE_GID>" },
+    "asana": {
+      "workspaceGid": "<ASANA_WORKSPACE_GID>",
+      // Public MCP OAuth app client id (secret stays out of this file).
+      "clientId": "<ASANA_CLIENT_ID>"
+    },
     "aws": { "regions": ["us-west-2", "us-east-1"] }
   },
 

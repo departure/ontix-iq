@@ -29,7 +29,10 @@ const validConfig = {
   },
   context: { sharingDomain: "production", kvNamespaceId: "context-kv-id" },
   customGatekeeper: { name: "Acme", message: "Use the company handbook." },
-  integrations: { asana: { workspaceGid: "123456789" }, aws: { regions: ["us-west-2", "us-east-1"] } },
+  integrations: {
+    asana: { workspaceGid: "123456789", clientId: "asana-client-id" },
+    aws: { regions: ["us-west-2", "us-east-1"] },
+  },
   errorReporting: { enabled: true, environment: "production", release: "abc123" },
   resources: {
     blueprintsKvNamespaceId: "blueprints-kv-id",
@@ -158,6 +161,7 @@ test("generates Access-mode Workshop, Context, and custom Gatekeeper configs", a
   assert.equal(generated.customGatekeeper.name, "acme-cloudflare-os-custom");
   assert.equal(generated.asanaGatekeeper.name, "acme-cloudflare-os-asana");
   assert.equal(generated.asanaGatekeeper.vars.ASANA_WORKSPACE_GID, "123456789");
+  assert.equal(generated.asanaGatekeeper.vars.ASANA_CLIENT_ID, "asana-client-id");
   assert.equal(generated.quickBooksGatekeeper.name, "acme-cloudflare-os-quickbooks");
   assert.equal(generated.awsGatekeeper.name, "acme-cloudflare-os-aws");
   assert.equal(generated.awsGatekeeper.vars.AWS_REGIONS, "us-west-2,us-east-1");
