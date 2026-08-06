@@ -15,9 +15,23 @@ Authentication and authorization are deliberately absent. Sign-in configuration 
 
 ### Branding
 
-Set the site name, logo, and accent color from the General tab in `/admin`. Logo uploads accept PNG, JPEG, WebP, and SVG files up to 5 MB. The browser scales the longest edge to 256 pixels without cropping and converts the result to PNG. The server then checks the PNG header and rejects anything over 256 KB or 512 pixels before storing it in the deployment's blueprint-content R2 bucket. Square images work best.
+Tracked source of truth for Ontix UI customization lives in [`branding/`](../branding/):
 
-The custom logo appears in the app chrome, sign-in screens, and browser tab on each user's next connection. Use **Restore default** to remove it.
+| File | Role |
+| --- | --- |
+| [`branding/branding.jsonc`](../branding/branding.jsonc) | Site name (`Ontix IQ`), accent hex (`#dc3a3f`), logo filename |
+| [`branding/logo.png`](../branding/logo.png) | Square mark shown beside the plain-text site name |
+| [`branding/overrides.css`](../branding/overrides.css) | Theme color CSS variables for further overrides |
+
+`scripts/apply-branding.mjs` runs after the Workshop frontend build (local and deploy). It copies `overrides.css` into the frontend `dist/` and links it from `index.html`. Do not patch branding inside the `cloudflare-os` submodule.
+
+`scripts/apply-branding.mjs` also bakes `siteName` and `accentColor` from `branding.jsonc` into the built frontend (default title/name fallback and critical accent CSS), so a local restart shows **Ontix IQ** and `#dc3a3f` without opening Admin first.
+
+**Logo upload still requires `/admin`.** Locally only username `admin` is an administrator (`ADMINS=["admin"]`). If you see “You don't have access to this page,” sign out and create/sign in as username exactly `admin`, then upload `branding/logo.png` under General. Production admins are the emails in `deployment.jsonc` → `access.admins`.
+
+Logo uploads accept PNG, JPEG, WebP, and SVG files up to 5 MB. The browser scales the longest edge to 256 pixels without cropping and converts the result to PNG. The server then checks the PNG header and rejects anything over 256 KB or 512 pixels before storing it in the deployment's blueprint-content R2 bucket. Square images work best.
+
+The custom logo appears in the app chrome next to the plain site name, on sign-in screens, and in the browser tab on each user's next connection. Use **Restore default** to remove it.
 
 ## Deployment configuration
 

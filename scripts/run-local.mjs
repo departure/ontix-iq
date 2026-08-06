@@ -2,6 +2,7 @@ import { existsSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from
 import { execFileSync, spawn } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { applyBranding } from "./apply-branding.mjs";
 import { loadTuiAsanaMcpTokens } from "./asana-mcp-tokens.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -17,6 +18,7 @@ if (!existsSync(join(upstream, "package.json"))) throw new Error("Cloudflare OS 
 const environment = loadEnvironment(join(root, ".env"));
 execFileSync("pnpm", ["--filter", "@gadgets/typed-storage", "build"], { cwd: upstream, stdio: "inherit" });
 execFileSync("pnpm", ["--filter", "@gadgets/workshop-frontend", "exec", "vite", "build"], { cwd: upstream, stdio: "inherit" });
+applyBranding();
 writeAsanaDevVars(environment);
 writeVars(join(root, "packages/gatekeeper-aws/.dev.vars"), environment, ["AWS_ACCESS_KEY", "AWS_ACCESS_KEY_SECRET", "AWS_REGIONS"]);
 for (const [name, target] of links) {

@@ -2,6 +2,7 @@
 
 ```text
 cloudflare-os/                   pinned upstream browser workspace
+branding/                        site name, logo, accent, CSS overrides
 packages/
   custom-gatekeeper/             canonical ORGANIZATION.md capability
   gatekeeper-asana/              read-only Asana Worker
@@ -10,6 +11,7 @@ packages/
   error-reporter/                private structured error Worker
 scripts/
   run-local.mjs                  local wrapper and secret handoff
+  apply-branding.mjs             inject branding/overrides.css into frontend dist
   deploy.mjs                     validation and ordered Cloudflare deploy
 skills/                          Ontix executive usage guidance
 ORGANIZATION.md                  canonical editable company source

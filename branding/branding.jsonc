@@ -1,0 +1,12 @@
+{
+  // Displayed next to the logo in the Workshop chrome and document titles.
+  // Apply in /admin → General → Site name (Admin has no file-based seed API).
+  "siteName": "Ontix IQ",
+
+  // Accent hex for buttons, links, and highlights. Also set in overrides.css.
+  // Apply in /admin → General → Theme so AdminConfig stays in sync for new sessions.
+  "accentColor": "#dc3a3f",
+
+  // Square mark uploaded via /admin → General → Logo.
+  "logo": "logo.png"
+}

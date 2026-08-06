@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join, relative, resolve } from "node:path";
 import { parse, printParseErrorCode } from "jsonc-parser";
+import { applyBranding } from "./apply-branding.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 // One deployment per checkout; use separate worktrees for concurrent deploys.
@@ -400,6 +401,7 @@ function build(config) {
     ...process.env,
     VITE_CF_ACCESS_MODE: "true",
   });
+  applyBranding();
   run(["--dir", "cloudflare-os", "--filter", "@gadgets/workshop-backend", "build"]);
 }
 

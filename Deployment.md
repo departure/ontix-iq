@@ -51,7 +51,7 @@ pnpm deploy
 
 The deploy script builds and deploys the private error reporter, upstream Context Worker, all Ontix Gatekeepers, and finally the Workshop Worker. Wrangler creates DNS/TLS for `art.ontixiq.com` and can automatically provision the configured KV/R2 resources.
 
-After deployment, sign in, open `/admin`, set the Ontix IQ branding, enable the organization and connector Gatekeepers, introduce them to Art’s agent, and verify that reads appear as observations.
+After deployment, sign in, open `/admin`, and apply Ontix branding from [`branding/`](branding/): site name and accent from `branding/branding.jsonc`, logo upload from `branding/logo.png`. CSS theme tokens from `branding/overrides.css` are already injected by the deploy build. Then enable the organization and connector Gatekeepers, introduce them to Art’s agent, and verify that reads appear as observations.
 
 ## Upgrades and rollback
 

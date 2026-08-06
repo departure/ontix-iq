@@ -1,0 +1,168 @@
+/*
+ * Ontix IQ theme overrides.
+ *
+ * Sourced from cloudflare-os/packages/workshop-frontend/src/styles.css (@theme + [data-mode="dark"]).
+ * Re-sync token names/values when upgrading the pinned Cloudflare OS submodule.
+ *
+ * Injected into the built frontend as /overrides.css by scripts/apply-branding.mjs.
+ * Edit color values here; leave surfaces at upstream defaults unless intentionally changing them.
+ * Brand intent tokens use Ontix red (#dc3a3f).
+ */
+
+:root {
+  /* Background tokens — near-white neutrals with a faint warm undertone */
+  --color-kumo-base: #fcfcfb;
+  --color-kumo-elevated: #f8f8f7;
+  --color-kumo-tint: #f3f3f1;
+  --color-kumo-overlay: #fbfbfa;
+  --color-kumo-recessed: #efeeec;
+  --color-kumo-control: #ffffff;
+  --color-kumo-contrast: #14110f;
+  --color-kumo-fill: #e8e7e4;
+  --color-kumo-fill-hover: #dededb;
+  --color-kumo-interact: #cac8c3;
+
+  /* Brand — Ontix red (intent only) */
+  --color-kumo-brand: #dc3a3f;
+  --color-kumo-brand-hover: #c23237;
+
+  /* Border / line tokens — neutral hairlines */
+  --color-kumo-line: #1411100f;
+  --color-kumo-ring: #cac8c3;
+
+  /* Chat surface tokens */
+  --color-kumo-bubble-user: #f1f0ee;
+
+  /* Status tints */
+  --color-kumo-info: oklch(62.3% 0.214 259.815);
+  --color-kumo-info-tint: oklch(90% 0.06 250);
+  --color-kumo-warning: oklch(79.5% 0.184 86.047);
+  --color-kumo-warning-tint: oklch(92% 0.08 85);
+  --color-kumo-danger: oklch(63.7% 0.237 25.331);
+  --color-kumo-danger-tint: oklch(92% 0.06 25);
+  --color-kumo-success: oklch(72.3% 0.219 149.579);
+  --color-kumo-success-tint: oklch(92% 0.08 150);
+
+  /* Tooltip */
+  --color-kumo-tip-shadow: #14111014;
+  --color-kumo-tip-stroke: transparent;
+
+  /* Text color tokens */
+  --text-color-kumo-default: #1c1a18;
+  --text-color-kumo-default-hover: #100f0d;
+  --text-color-kumo-inverse: #ffffff;
+  --text-color-kumo-strong: #100f0d;
+  --text-color-kumo-subtle: oklch(52% 0.006 60);
+  --text-color-kumo-inactive: oklch(66% 0.005 60);
+  --text-color-kumo-brand: #dc3a3f;
+  --text-color-kumo-link: #dc3a3f;
+  --text-color-kumo-success: oklch(72.3% 0.219 149.579);
+  --text-color-kumo-danger: oklch(63.7% 0.237 25.331);
+  --text-color-kumo-warning: oklch(47.6% 0.114 61.907);
+
+  /* Custom brand tokens */
+  --color-accent-100: #dc3a3f;
+  --color-accent-200: #e85d61;
+  --color-background-100: #fcfcfb;
+  --color-background-200: #f8f8f7;
+  --color-background-300: #f3f3f1;
+  --color-foreground-100: #100f0d;
+  --color-foreground-200: #100f0d;
+  --color-foreground-300: #1c1a18;
+  --color-border-100: #e8e7e4;
+  --color-border-100-50: #e8e7e480;
+  --color-selection-bg: #fde8e9;
+  --color-selection-text: #c23237;
+  --color-shadow-accent-light: #f0a0a3;
+  --color-shadow-accent-dark: #8f2428;
+
+  /* Category colors */
+  --color-compute-100: #0a95ff;
+  --color-compute-200: #0a95ff1a;
+  --color-storage-100: #ee0ddb;
+  --color-storage-200: #ee0ddb1a;
+  --color-ai-100: #19e306;
+  --color-ai-200: #f2f5e1;
+  --color-media-100: #9616ff;
+  --color-media-200: #f8ebee;
+
+  /* Status colors */
+  --color-status-live: oklch(72.3% 0.219 149.579);
+  --color-status-draft: oklch(68.1% 0.162 75.834);
+  --color-status-building: oklch(62.3% 0.214 259.815);
+}
+
+[data-mode="dark"] {
+  /* Seal-inspired dark palette: violet-tinted surfaces around hue 285 */
+  --color-kumo-base: oklch(0.115 0.012 285);
+  --color-kumo-elevated: oklch(0.155 0.011 285);
+  --color-kumo-tint: oklch(0.225 0.025 285);
+  --color-kumo-overlay: oklch(0.155 0.011 285);
+  --color-kumo-recessed: oklch(0.1 0.012 285);
+  --color-kumo-control: oklch(0.155 0.011 285);
+  --color-kumo-contrast: var(--color-kumo-brand);
+  --color-kumo-strong: var(--color-kumo-brand-hover);
+  --color-kumo-fill: oklch(0.225 0.025 285);
+  --color-kumo-fill-hover: oklch(0.295 0.045 285);
+  --color-kumo-interact: oklch(0.34 0.022 285);
+  --color-kumo-line: oklch(0.34 0.022 285);
+  --color-kumo-ring: oklch(0.52 0.065 285);
+  --color-kumo-bubble-user: oklch(0.225 0.025 285);
+
+  /* Brand — Ontix red, slightly deepened for dark surfaces */
+  --color-kumo-brand: #c23237;
+  --color-kumo-brand-hover: #a82a2e;
+
+  --color-kumo-info: oklch(62.3% 0.214 259.815);
+  --color-kumo-info-tint: oklch(0.25 0.065 259.815);
+  --color-kumo-warning: oklch(55.5% 0.163 48.998);
+  --color-kumo-warning-tint: oklch(0.27 0.06 84.429);
+  --color-kumo-danger: oklch(50.5% 0.213 27.518);
+  --color-kumo-danger-tint: oklch(0.25 0.065 25.331);
+  --color-kumo-success: oklch(52.7% 0.154 150.069);
+  --color-kumo-success-tint: oklch(0.25 0.06 150.069);
+
+  --color-kumo-tip-shadow: #00000066;
+  --color-kumo-tip-stroke: oklch(0.34 0.022 285);
+
+  --text-color-kumo-default: oklch(0.92 0.01 285);
+  --text-color-kumo-default-hover: oklch(0.97 0.006 285);
+  --text-color-kumo-inverse: #ffffff;
+  --text-color-kumo-strong: oklch(0.92 0.01 285);
+  --text-color-kumo-subtle: oklch(0.66 0.02 285);
+  --text-color-kumo-inactive: oklch(0.58 0.025 285);
+  --text-color-kumo-brand: #f07a7e;
+  --text-color-kumo-link: #f07a7e;
+  --text-color-kumo-success: oklch(79.2% 0.209 151.711);
+  --text-color-kumo-danger: oklch(70.4% 0.191 22.216);
+  --text-color-kumo-warning: oklch(82.8% 0.189 84.429);
+
+  --color-accent-100: #c23237;
+  --color-accent-200: #f07a7e;
+  --color-background-100: oklch(0.115 0.012 285);
+  --color-background-200: oklch(0.155 0.011 285);
+  --color-background-300: oklch(0.225 0.025 285);
+  --color-foreground-100: oklch(0.92 0.01 285);
+  --color-foreground-200: oklch(0.78 0.018 285);
+  --color-foreground-300: oklch(0.66 0.02 285);
+  --color-border-100: oklch(0.34 0.022 285);
+  --color-border-100-50: oklch(0.34 0.022 285 / 0.5);
+  --color-selection-bg: color-mix(in srgb, var(--color-kumo-brand) 28%, transparent);
+  --color-selection-text: oklch(0.97 0.006 285);
+  --color-shadow-accent-light: #dc3a3f55;
+  --color-shadow-accent-dark: #00000080;
+
+  --color-compute-100: oklch(74% 0.16 250);
+  --color-compute-200: oklch(0.25 0.065 250);
+  --color-storage-100: oklch(78% 0.22 325);
+  --color-storage-200: oklch(0.25 0.07 325);
+  --color-ai-100: oklch(79.2% 0.209 151.711);
+  --color-ai-200: oklch(0.25 0.06 150);
+  --color-media-100: oklch(78% 0.19 300);
+  --color-media-200: oklch(0.25 0.07 300);
+
+  --color-status-live: oklch(79.2% 0.209 151.711);
+  --color-status-draft: oklch(82.8% 0.189 84.429);
+  --color-status-building: oklch(74% 0.16 250);
+}
+
