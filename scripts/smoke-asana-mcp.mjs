@@ -24,7 +24,7 @@ function loadEnv(path) {
   );
 }
 
-function loadTuiTokens(env) {
+function loadLocalTokens(env) {
   const dataDir = env.ONTIX_DATA_DIR || join(root, ".data");
   const tokenPath = join(dataDir, "secrets", "asana-tokens.json");
   const keyPath = join(dataDir, "secrets", "local-token.key");
@@ -178,12 +178,12 @@ function extractText(result) {
 
 async function main() {
   const env = loadEnv(join(root, ".env"));
-  const tui = loadTuiTokens(env);
+  const local = loadLocalTokens(env);
   const clientId = env.ASANA_CLIENT_ID || "";
   const clientSecret = env.ASANA_CLIENT_SECRET || "";
   const workspace = env.ASANA_WORKSPACE_GID || "";
-  let accessToken = tui?.accessToken || "";
-  let refreshToken = env.ASANA_REFRESH_TOKEN || tui?.refreshToken || "";
+  let accessToken = local?.accessToken || "";
+  let refreshToken = env.ASANA_REFRESH_TOKEN || local?.refreshToken || "";
 
   console.log(JSON.stringify({
     hasClientId: Boolean(clientId),
@@ -191,7 +191,7 @@ async function main() {
     hasWorkspace: Boolean(workspace),
     hasRefresh: Boolean(refreshToken),
     hasAccessBootstrap: Boolean(accessToken),
-    source: env.ASANA_REFRESH_TOKEN ? "env" : tui ? "tui-store" : "missing",
+    source: env.ASANA_REFRESH_TOKEN ? "env" : local ? "local-store" : "missing",
   }));
 
   if (!clientId || !clientSecret || !refreshToken || !workspace) {
@@ -207,7 +207,7 @@ async function main() {
     return accessToken;
   };
 
-  // Prefer a fresh token up front — TUI access tokens are often expired.
+  // Prefer a fresh token up front — stored access tokens are often expired.
   {
     const refreshed = await refresh(clientId, clientSecret, refreshToken);
     accessToken = refreshed.accessToken;

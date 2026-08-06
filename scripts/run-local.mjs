@@ -3,7 +3,7 @@ import { execFileSync, spawn } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { applyBranding } from "./apply-branding.mjs";
-import { loadTuiAsanaMcpTokens } from "./asana-mcp-tokens.mjs";
+import { loadLocalAsanaMcpTokens } from "./asana-mcp-tokens.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const upstream = join(root, "cloudflare-os");
@@ -74,14 +74,14 @@ child.on("exit", (code) => {
 });
 
 function writeAsanaDevVars(values) {
-  const tui = loadTuiAsanaMcpTokens(root, values);
+  const local = loadLocalAsanaMcpTokens(root, values);
   const merged = {
     ASANA_CLIENT_ID: values.ASANA_CLIENT_ID,
     ASANA_CLIENT_SECRET: values.ASANA_CLIENT_SECRET,
     ASANA_WORKSPACE_GID: values.ASANA_WORKSPACE_GID,
-    ASANA_REFRESH_TOKEN: values.ASANA_REFRESH_TOKEN || tui?.refreshToken,
-    // Prefer an MCP OAuth access token from the TUI store; the REST PAT is not valid for MCP.
-    ASANA_ACCESS_TOKEN: tui?.accessToken || values.ASANA_MCP_ACCESS_TOKEN,
+    ASANA_REFRESH_TOKEN: values.ASANA_REFRESH_TOKEN || local?.refreshToken,
+    // Prefer a stored MCP OAuth access token; a REST PAT is not valid for MCP.
+    ASANA_ACCESS_TOKEN: local?.accessToken || values.ASANA_MCP_ACCESS_TOKEN,
   };
   writeVars(join(root, "packages/gatekeeper-asana/.dev.vars"), merged, [
     "ASANA_CLIENT_ID",
@@ -92,8 +92,8 @@ function writeAsanaDevVars(values) {
   ]);
   if (!merged.ASANA_REFRESH_TOKEN) {
     console.warn(
-      "Asana MCP: no refresh token found in .env (ASANA_REFRESH_TOKEN) or the TUI token store. " +
-      "Authorize with the legacy TUI flow or set ASANA_REFRESH_TOKEN before using the Asana Gatekeeper.",
+      "Asana MCP: no refresh token found in .env (ASANA_REFRESH_TOKEN) or .data/secrets/asana-tokens.json. " +
+      "Set ASANA_REFRESH_TOKEN before using the Asana Gatekeeper.",
     );
   }
 }

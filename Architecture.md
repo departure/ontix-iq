@@ -32,4 +32,4 @@ Agents and generated Gadgets never receive provider credentials. Gatekeeper Work
 
 ## Persistence and future work
 
-Cloudflare OS supplies Durable Object workspace state, Gadget isolation, Blueprint support, scheduler Gatekeeper, observation history, and approval infrastructure. They remain available but product-specific dashboards and recurring briefs are deferred. The original TUI sources remain temporarily in `src/`, `skills/`, and `tests/` as migration reference; they are not part of the deployed runtime.
+Cloudflare OS supplies Durable Object workspace state, Gadget isolation, Blueprint support, scheduler Gatekeeper, observation history, and approval infrastructure. They remain available but product-specific dashboards and recurring briefs are deferred. Agent guidance for each capability lives in `skills/*/SKILL.md`; Gatekeeper Workers under `packages/` own credentials and observation APIs.

@@ -8,7 +8,7 @@ type ToolCall = (args: Record<string, unknown>) => Promise<unknown>;
 
 /**
  * Collect created tasks across a date range by recursively partitioning when MCP's
- * search_tasks page is full (100). Ported from the TUI retrieval helpers.
+ * search_tasks page is full (100).
  */
 export async function getTasksCreatedBetween(
   search: ToolCall,
@@ -86,7 +86,7 @@ export async function getTasksCreatedBetween(
   return tasks;
 }
 
-/** Follow get_tasks offset pagination until exhaustion (TUI parity). */
+/** Follow get_tasks offset pagination until exhaustion. */
 export async function getAllAssignedTasks(
   getTasks: ToolCall,
   assignee: string,

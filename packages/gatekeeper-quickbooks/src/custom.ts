@@ -20,7 +20,7 @@ import type {
 } from "@gadgets/workshop-shared/gatekeeper";
 import type { CustomSession, DateRange } from "./types.js";
 import TYPES_CODE from "./types-code.js";
-import { SimulatedQuickBooksClient } from "./legacy/client.js";
+import { SimulatedQuickBooksClient } from "./simulation/client.js";
 
 const CUSTOM_ICON = {
   url:

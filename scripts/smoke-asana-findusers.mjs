@@ -11,7 +11,7 @@ function loadEnv(path) {
   }));
 }
 
-function loadTui(env) {
+function loadLocalTokens(env) {
   const dataDir = env.ONTIX_DATA_DIR || ".data";
   const tokenPath = join(dataDir, "secrets", "asana-tokens.json");
   const keyPath = join(dataDir, "secrets", "local-token.key");
@@ -30,7 +30,7 @@ function loadTui(env) {
 }
 
 const env = loadEnv(".env");
-const tokens = loadTui(env);
+const tokens = loadLocalTokens(env);
 const body = new URLSearchParams({
   grant_type: "refresh_token",
   refresh_token: tokens.refresh_token,

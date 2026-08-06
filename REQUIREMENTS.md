@@ -1,6 +1,6 @@
 # Ontix IQ requirements
 
-**Release:** Cloudflare OS migration sprint
+**Release:** Cloudflare OS
 **Customer:** DEPARTURE
 **Primary user:** Art Bradshaw
 **Production hostname:** `art.ontixiq.com`
@@ -21,7 +21,7 @@ Ontix IQ is a managed, customer-specific Cloudflare OS distribution that gives a
 
 - Package `ORGANIZATION.md` as canonical, read-only organization context available to every conversation and future workflow.
 - Speak directly to Art, lead with the answer, separate facts from recommendations, cite observations, and identify material gaps.
-- Preserve the prior TUI’s evidence-first behavior and distinctions between verified zero results, capped samples, and retrieval failures.
+- Preserve evidence-first behavior and distinctions between verified zero results, capped samples, and retrieval failures.
 - Keep conversation/workspace state in Cloudflare OS Durable Objects and its existing storage boundaries.
 
 ## Integrations

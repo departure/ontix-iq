@@ -12,7 +12,7 @@ Read-only access to a configured Asana workspace through **Asana MCP** (`https:/
 | `ASANA_ACCESS_TOKEN` | optional secret | Bootstrap access token (refreshed automatically) |
 | `ASANA_WORKSPACE_GID` | var | Workspace used for search/list filters |
 
-Local `pnpm dev` copies client credentials from `.env` and, when `ASANA_REFRESH_TOKEN` is unset, loads the refresh/access pair from the legacy TUI store under `.data/secrets/asana-tokens.json`. Token refresh uses `https://app.asana.com/-/oauth_token` (MCP V2's authorization server), not `mcp.asana.com/token`. Do not put a REST personal access token in `ASANA_ACCESS_TOKEN` — MCP rejects it.
+Local `pnpm dev` copies client credentials from `.env` and, when `ASANA_REFRESH_TOKEN` is unset, loads the refresh/access pair from `.data/secrets/asana-tokens.json` when present. Token refresh uses `https://app.asana.com/-/oauth_token` (MCP V2's authorization server), not `mcp.asana.com/token`. Do not put a REST personal access token in `ASANA_ACCESS_TOKEN` — MCP rejects it.
 
 Production:
 

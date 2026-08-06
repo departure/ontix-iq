@@ -3,10 +3,10 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 /**
- * Load MCP OAuth tokens from the legacy TUI encrypted store so local Wrangler can refresh
- * without copying the opaque PAT into the Worker.
+ * Load MCP OAuth tokens from `.data/secrets/asana-tokens.json` when present so local
+ * Wrangler can refresh without requiring ASANA_REFRESH_TOKEN in `.env`.
  */
-export function loadTuiAsanaMcpTokens(root, environment = {}) {
+export function loadLocalAsanaMcpTokens(root, environment = {}) {
   const dataDir = environment.ONTIX_DATA_DIR || join(root, ".data");
   const tokenPath = join(dataDir, "secrets", "asana-tokens.json");
   if (!existsSync(tokenPath)) return null;
