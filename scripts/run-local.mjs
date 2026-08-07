@@ -1,9 +1,11 @@
-import { existsSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, readlinkSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { execFileSync, spawn } from "node:child_process";
+import { createServer } from "node:net";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { applyBranding } from "./apply-branding.mjs";
+import { applyBranding, watchOverridesCss } from "./apply-branding.mjs";
 import { loadLocalAsanaMcpTokens } from "./asana-mcp-tokens.mjs";
+import { getWranglerPortFromBackendHost } from "../cloudflare-os/scripts/dev-server-config.js";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const upstream = join(root, "cloudflare-os");
@@ -16,15 +18,15 @@ const links = [
 
 if (!existsSync(join(upstream, "package.json"))) throw new Error("Cloudflare OS is not initialized. Run: git submodule update --init");
 const environment = loadEnvironment(join(root, ".env"));
+const devPort = Number(getWranglerPortFromBackendHost(environment.VITE_BACKEND_HOST || "localhost:8787") || 8787);
+await assertPortFree(devPort);
 execFileSync("pnpm", ["--filter", "@gadgets/typed-storage", "build"], { cwd: upstream, stdio: "inherit" });
 execFileSync("pnpm", ["--filter", "@gadgets/workshop-frontend", "exec", "vite", "build"], { cwd: upstream, stdio: "inherit" });
-applyBranding();
+applyBranding({ liveReload: true });
+const stopOverridesWatch = watchOverridesCss();
 writeAsanaDevVars(environment);
 writeVars(join(root, "packages/gatekeeper-aws/.dev.vars"), environment, ["AWS_ACCESS_KEY", "AWS_ACCESS_KEY_SECRET", "AWS_REGIONS"]);
-for (const [name, target] of links) {
-  const path = join(upstream, "packages", name);
-  if (!existsSync(path)) symlinkSync(target, path, "dir");
-}
+for (const [name, target] of links) ensureGatekeeperLink(name, target);
 // The upstream runner keeps a file watcher per gatekeeper alive after Wrangler exits, and those
 // child handles hold its event loop open indefinitely. Its own group leader lets us signal the
 // whole tree at once, and owning the keyboard here means quitting never depends on that runner.
@@ -33,6 +35,7 @@ let cleanedUp = false;
 const cleanup = () => {
   if (cleanedUp) return;
   cleanedUp = true;
+  try { stopOverridesWatch(); } catch {}
   for (const [name] of links) {
     try { unlinkSync(join(upstream, "packages", name)); } catch {}
   }
@@ -111,4 +114,46 @@ function loadEnvironment(path) {
 function writeVars(path, values, names) {
   const lines = names.flatMap((name) => values[name] ? [`${name}=${values[name]}`] : []);
   if (lines.length) writeFileSync(path, `${lines.join("\n")}\n`, { mode: 0o600 });
+}
+
+/** Fail fast when a previous local session still owns the Wrangler port. */
+function assertPortFree(port) {
+  return new Promise((resolvePromise, reject) => {
+    const server = createServer();
+    server.unref();
+    server.once("error", (error) => {
+      if (error && error.code === "EADDRINUSE") {
+        reject(new Error(
+          `Local Ontix port ${port} is already in use. Stop the other \`pnpm start\`/\`pnpm dev\` session ` +
+          `(press q in that terminal, or free the port), then retry.`,
+        ));
+        return;
+      }
+      reject(error);
+    });
+    server.listen(port, "127.0.0.1", () => {
+      server.close((closeError) => (closeError ? reject(closeError) : resolvePromise()));
+    });
+  });
+}
+
+/** Create or refresh the upstream package symlink used by the local multi-worker runner. */
+function ensureGatekeeperLink(name, target) {
+  const path = join(upstream, "packages", name);
+  const desired = resolve(target);
+  try {
+    const stat = lstatSync(path);
+    if (stat.isSymbolicLink()) {
+      const current = resolve(dirname(path), readlinkSync(path));
+      if (current === desired) return;
+      unlinkSync(path);
+    } else {
+      throw new Error(
+        `${path} exists and is not a symlink. Move or remove it so local can link ${desired}.`,
+      );
+    }
+  } catch (error) {
+    if (error && error.code !== "ENOENT") throw error;
+  }
+  symlinkSync(desired, path, "dir");
 }

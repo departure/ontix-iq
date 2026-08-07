@@ -5,6 +5,7 @@
  * Re-sync token names/values when upgrading the pinned Cloudflare OS submodule.
  *
  * Injected into the built frontend as /overrides.css by scripts/apply-branding.mjs.
+ * Locally (`pnpm dev`), edits are watched and live-reloaded without restarting the app.
  * Edit color values here; leave surfaces at upstream defaults unless intentionally changing them.
  * Brand intent tokens use Ontix red (#dc3a3f).
  */

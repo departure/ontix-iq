@@ -17,7 +17,11 @@ Single home for Workshop UI customization. Do not edit branding inside the `clou
 3. Replaces the built-in default site name (`Cloudflare OS`) with `siteName` from `branding.jsonc`
 4. Copies `logo.png` to `dist/branding-logo.png` for reference
 
-Restart local (`pnpm dev` / `pnpm start`) after editing these files so the frontend rebuild + apply step runs.
+### Local hot reload (`overrides.css`)
+
+While `pnpm dev` / `pnpm start` is running, edits to `overrides.css` are watched and re-copied into `dist/`. A small local-only script in the page polls that stylesheet and swaps it in without restarting the app (or refreshing, in most cases).
+
+Restart local after changing `branding.jsonc` or `logo.png` — those still need the full apply step (and Admin upload for the logo).
 
 ## `/admin` access (required for the logo)
 

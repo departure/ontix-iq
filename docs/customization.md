@@ -27,6 +27,8 @@ Tracked source of truth for Ontix UI customization lives in [`branding/`](../bra
 
 `scripts/apply-branding.mjs` also bakes `siteName` and `accentColor` from `branding.jsonc` into the built frontend (default title/name fallback and critical accent CSS), so a local restart shows **Ontix IQ** and `#dc3a3f` without opening Admin first.
 
+Locally, `pnpm dev` watches `branding/overrides.css` and live-reloads it into the running app without a restart. Changes to `branding.jsonc` or the logo still need a restart (and `/admin` upload for the logo).
+
 **Logo upload still requires `/admin`.** Locally only username `admin` is an administrator (`ADMINS=["admin"]`). If you see “You don't have access to this page,” sign out and create/sign in as username exactly `admin`, then upload `branding/logo.png` under General. Production admins are the emails in `deployment.jsonc` → `access.admins`.
 
 Logo uploads accept PNG, JPEG, WebP, and SVG files up to 5 MB. The browser scales the longest edge to 256 pixels without cropping and converts the result to PNG. The server then checks the PNG header and rejects anything over 256 KB or 512 pixels before storing it in the deployment's blueprint-content R2 bucket. Square images work best.
