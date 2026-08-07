@@ -5,7 +5,7 @@
   "packageManager": "pnpm@11.9.0",
   "scripts": {
     "dev": "node scripts/run-local.mjs",
-    "start": "git submodule update --init && pnpm install && pnpm --dir cloudflare-os install && node scripts/run-local.mjs",
+    "start": "node scripts/ensure-deps.mjs && node scripts/run-local.mjs",
     "test": "node --test scripts/*.test.mjs && pnpm --filter './packages/**' test",
     "typecheck": "pnpm --filter './packages/**' types:check",
     "check": "node scripts/deploy.mjs --check",

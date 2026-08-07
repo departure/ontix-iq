@@ -1,6 +1,6 @@
 import { existsSync, lstatSync, readFileSync, readlinkSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
-import { execFileSync, spawn } from "node:child_process";
-import { createServer } from "node:net";
+import { spawn, spawnSync } from "node:child_process";
+import { createConnection, createServer } from "node:net";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { applyBranding, watchOverridesCss } from "./apply-branding.mjs";
@@ -15,13 +15,19 @@ const links = [
   ["gatekeeper-quickbooks", join(root, "packages/gatekeeper-quickbooks")],
   ["gatekeeper-aws", join(root, "packages/gatekeeper-aws")],
 ];
+const QUIT_HINT = "press q to quit";
 
 if (!existsSync(join(upstream, "package.json"))) throw new Error("Cloudflare OS is not initialized. Run: git submodule update --init");
 const environment = loadEnvironment(join(root, ".env"));
 const devPort = Number(getWranglerPortFromBackendHost(environment.VITE_BACKEND_HOST || "localhost:8787") || 8787);
+const devUrl = `http://localhost:${devPort}`;
 await assertPortFree(devPort);
-execFileSync("pnpm", ["--filter", "@gadgets/typed-storage", "build"], { cwd: upstream, stdio: "inherit" });
-execFileSync("pnpm", ["--filter", "@gadgets/workshop-frontend", "exec", "vite", "build"], { cwd: upstream, stdio: "inherit" });
+
+// Keep the terminal quiet from the Vite production build through Wrangler boot; surface the
+// buffered log only if something fails before the URL is ready.
+console.log("Preparing local Ontix IQ…");
+runQuiet("pnpm", ["--filter", "@gadgets/typed-storage", "build"], upstream);
+runQuiet("pnpm", ["--filter", "@gadgets/workshop-frontend", "exec", "vite", "build"], upstream);
 applyBranding({ liveReload: true });
 const stopOverridesWatch = watchOverridesCss();
 writeAsanaDevVars(environment);
@@ -30,11 +36,29 @@ for (const [name, target] of links) ensureGatekeeperLink(name, target);
 // The upstream runner keeps a file watcher per gatekeeper alive after Wrangler exits, and those
 // child handles hold its event loop open indefinitely. Its own group leader lets us signal the
 // whole tree at once, and owning the keyboard here means quitting never depends on that runner.
-const child = spawn(process.execPath, ["run-dev-server.js", "--serve-frontend-assets"], { cwd: upstream, stdio: ["ignore", "inherit", "inherit"], detached: true, env: { ...process.env, ...environment } });
+const child = spawn(process.execPath, ["run-dev-server.js", "--serve-frontend-assets"], {
+  cwd: upstream,
+  stdio: ["ignore", "pipe", "pipe"],
+  detached: true,
+  env: { ...process.env, ...environment },
+});
+const bootLog = [];
+let outputLive = false;
+const relayChildOutput = (stream, dest) => {
+  stream.on("data", (chunk) => {
+    if (outputLive) dest.write(chunk);
+    else bootLog.push(chunk);
+  });
+};
+relayChildOutput(child.stdout, process.stdout);
+relayChildOutput(child.stderr, process.stderr);
+
+let stopQuitHint = () => {};
 let cleanedUp = false;
 const cleanup = () => {
   if (cleanedUp) return;
   cleanedUp = true;
+  try { stopQuitHint(); } catch {}
   try { stopOverridesWatch(); } catch {}
   for (const [name] of links) {
     try { unlinkSync(join(upstream, "packages", name)); } catch {}
@@ -60,7 +84,6 @@ if (process.stdin.isTTY) {
   // Raw mode clears ISIG, so Ctrl+C and Ctrl+D arrive as data rather than signals. Keystrokes
   // typed while the server boots arrive coalesced into one chunk, so scan rather than compare.
   process.stdin.on("data", (keys) => { if (/[qx\u0003\u0004]/.test(keys)) stop(); });
-  console.log("\nOntix IQ dev server starting. Press q to quit.\n");
 }
 process.on("SIGINT", stop);
 process.on("SIGTERM", stop);
@@ -71,10 +94,111 @@ process.on("exit", () => {
   try { process.kill(-child.pid, "SIGTERM"); } catch {}
 });
 child.on("exit", (code) => {
+  if (!outputLive && !stopping && bootLog.length) {
+    for (const chunk of bootLog) process.stderr.write(chunk);
+  }
   cleanup();
   clearTimeout(stopTimer);
   process.exit(stopping ? expectedExitCode : (code ?? 0));
 });
+
+try {
+  await waitUntilReady(devPort);
+} catch (error) {
+  if (!stopping) {
+    stopping = true;
+    expectedExitCode = 1;
+    try { process.kill(-child.pid, "SIGTERM"); } catch {}
+  }
+  cleanup();
+  console.error(error instanceof Error ? error.message : error);
+  process.exit(1);
+}
+if (stopping || cleanedUp) {
+  // Quit arrived during boot; exit handling above will finish teardown.
+} else {
+  outputLive = true;
+  bootLog.length = 0;
+  console.log(`\nOntix IQ ready at ${devUrl}\n`);
+  openBrowser(devUrl);
+  stopQuitHint = installQuitHint();
+}
+
+/** Run a build step with captured output; print it only on failure. */
+function runQuiet(command, args, cwd) {
+  const result = spawnSync(command, args, {
+    cwd,
+    encoding: "utf8",
+    env: process.env,
+    maxBuffer: 32 * 1024 * 1024,
+  });
+  if (result.status === 0) return;
+  if (result.stdout) process.stdout.write(result.stdout);
+  if (result.stderr) process.stderr.write(result.stderr);
+  throw new Error(`${command} ${args.join(" ")} failed (exit ${result.status ?? "unknown"}).`);
+}
+
+/** Keep a one-line quit hint pinned to the bottom of the terminal via the DECSTBM scroll region. */
+function installQuitHint() {
+  if (!process.stdout.isTTY) return () => {};
+  const paint = () => {
+    const rows = process.stdout.rows || 24;
+    if (rows < 3) return;
+    process.stdout.write(`\x1b[1;${rows - 1}r`);
+    process.stdout.write(`\x1b[s\x1b[${rows};1H\x1b[2K${QUIT_HINT}\x1b[u`);
+  };
+  paint();
+  process.stdout.on("resize", paint);
+  // Wrangler may clobber the status line; refresh often enough to keep it visible.
+  const timer = setInterval(paint, 1000);
+  timer.unref();
+  return () => {
+    clearInterval(timer);
+    process.stdout.off("resize", paint);
+    const rows = process.stdout.rows || 24;
+    process.stdout.write("\x1b[r");
+    process.stdout.write(`\x1b[s\x1b[${rows};1H\x1b[2K\x1b[u`);
+  };
+}
+
+/** Wait until the local port accepts connections. */
+async function waitUntilReady(port, { timeoutMs = 180_000, intervalMs = 400 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (stopping || cleanedUp) return;
+    const ready = await new Promise((resolveReady) => {
+      const socket = createConnection({ host: "127.0.0.1", port }, () => {
+        socket.end();
+        resolveReady(true);
+      });
+      socket.on("error", () => {
+        socket.destroy();
+        resolveReady(false);
+      });
+    });
+    if (ready) return;
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  if (bootLog.length) {
+    for (const chunk of bootLog) process.stderr.write(chunk);
+  }
+  throw new Error(`Local Ontix server did not become ready on port ${port} within ${timeoutMs / 1000}s.`);
+}
+
+function openBrowser(url) {
+  if (process.env.ONTIX_NO_OPEN === "1") return;
+  try {
+    if (process.platform === "darwin") {
+      spawn("open", [url], { stdio: "ignore", detached: true }).unref();
+    } else if (process.platform === "win32") {
+      spawn("cmd", ["/c", "start", "", url], { stdio: "ignore", detached: true }).unref();
+    } else {
+      spawn("xdg-open", [url], { stdio: "ignore", detached: true }).unref();
+    }
+  } catch {
+    // Browser open is best-effort; the URL is already printed above.
+  }
+}
 
 function writeAsanaDevVars(values) {
   const local = loadLocalAsanaMcpTokens(root, values);

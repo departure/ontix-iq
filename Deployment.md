@@ -8,9 +8,9 @@ Requirements: Node.js 24+, pnpm 11, and Git.
 pnpm start
 ```
 
-Open `http://localhost:8787`. That initializes the Cloudflare OS submodule, installs dependencies, and starts the local server. Use `pnpm dev` when the checkout is already warm. The wrapper temporarily introduces the Ontix Gatekeepers to the pinned upstream local runner and removes those links when it exits. Local Cloudflare state lives under `cloudflare-os/.wrangler`.
+That verifies/installs toolchain dependencies (including Homebrew on macOS/Linux when needed), initializes the Cloudflare OS submodule, installs package deps, starts the local server, and opens `http://localhost:8787` when ready. Use `pnpm dev` when the checkout is already warm. Set `ONTIX_NO_OPEN=1` to skip opening a browser. The wrapper temporarily introduces the Ontix Gatekeepers to the pinned upstream local runner and removes those links when it exits. Local Cloudflare state lives under `cloudflare-os/.wrangler`.
 
-Press `q` to stop the server; `x`, `Ctrl+C`, and closing the terminal do the same. The wrapper owns the keyboard and terminates the whole server process group, because the upstream runner keeps one file watcher per Gatekeeper alive after Wrangler exits and would otherwise never return the prompt. Wrangler's own hotkeys are unavailable as a result.
+The terminal keeps `press q to quit` pinned at the bottom. Press `q` to stop the server; `x`, `Ctrl+C`, and closing the terminal do the same. The wrapper owns the keyboard and terminates the whole server process group, because the upstream runner keeps one file watcher per Gatekeeper alive after Wrangler exits and would otherwise never return the prompt. Wrangler's own hotkeys are unavailable as a result.
 
 Local multi-config Wrangler binds Gatekeepers by the symlink directory name (`gatekeeper-asana`, `gatekeeper-aws`, `gatekeeper-organization`, `gatekeeper-quickbooks`). Each package's `wrangler.jsonc` `name` must match that directory so Miniflare can find the Worker. Production Worker names still come from `deployment.jsonc` and overwrite these during `pnpm deploy`.
 
